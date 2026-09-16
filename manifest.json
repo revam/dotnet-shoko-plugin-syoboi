@@ -1,0 +1,16 @@
+{
+  "id": "2f4b7a3e-9c1d-4f6a-8b2e-5d3c7a1f9e0b",
+  "name": "Syoboi Calendar",
+  "overview": "Provides Japanese TV and streaming broadcast schedules from cal.syoboi.jp (Syoboi Calendar).",
+  "authors": "revam",
+  "repository_url": "https://github.com/revam/dotnet-shoko-plugin-syoboi",
+  "homepage_url": "https://cal.syoboi.jp/",
+  "tags": [
+    "airing-schedule",
+    "calendar",
+    "syoboi",
+    "broadcast"
+  ],
+  "thumbnail": null,
+  "releases": []
+}

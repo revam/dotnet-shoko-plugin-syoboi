@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit.v3" Version="3.1.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <!--
+    Same reasoning as the plugin's own reference: the airing schedule
+    abstractions this plugin builds against are still in progress, so tests
+    need the in-progress project too, not the last published package. Unlike
+    the plugin's reference, this one is a normal ProjectReference (runtime
+    assets included), because the test host has to actually run the code.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shoko\Shoko.Abstractions\Shoko.Abstractions.csproj" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\source\Shoko.Plugin.Syoboi.csproj" />
+  </ItemGroup>
+</Project>
