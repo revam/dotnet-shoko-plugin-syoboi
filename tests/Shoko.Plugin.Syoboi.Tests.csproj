@@ -19,14 +19,12 @@
   </ItemGroup>
 
   <!--
-    Same reasoning as the plugin's own reference: the airing schedule
-    abstractions this plugin builds against are still in progress, so tests
-    need the in-progress project too, not the last published package. Unlike
-    the plugin's reference, this one is a normal ProjectReference (runtime
-    assets included), because the test host has to actually run the code.
+    The plugin excludes the abstractions' runtime assets (the server supplies
+    them), but the test host has to actually load them, so this reference
+    keeps them.
   -->
   <ItemGroup>
-    <ProjectReference Include="..\..\Shoko\Shoko.Abstractions\Shoko.Abstractions.csproj" />
+    <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.89" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 

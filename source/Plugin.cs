@@ -1,5 +1,4 @@
 using System;
-using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.Config;
@@ -32,6 +31,7 @@ public class Plugin : IPlugin, IPluginServiceRegistration, IPluginApplicationReg
     public static void RegisterServices(IServiceCollection serviceCollection, IApplicationPaths applicationPaths)
     {
         serviceCollection.AddSingleton<SyoboiRateLimiter>();
+        serviceCollection.AddSingleton<SyoboiChannelDirectoryCache>();
         serviceCollection.AddSingleton<SyoboiAiringScheduleProvider>();
 
         serviceCollection.AddHttpClient<SyoboiApiClient>((sp, client) =>
@@ -42,8 +42,10 @@ public class Plugin : IPlugin, IPluginServiceRegistration, IPluginApplicationReg
             client.DefaultRequestHeaders.UserAgent.Clear();
             // Syoboi asks for a custom User-Agent in the form "AppName (+url)";
             // clients without one are throttled harder (see SyoboiConstants).
-            client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(SanitizeToken(config.UserAgentAppName)));
-            client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue($"(+{config.UserAgentUrl})"));
+            // Both halves come from user-editable settings, so SyoboiUserAgent
+            // normalises them into something the header parser accepts.
+            foreach (var value in SyoboiUserAgent.Build(config.UserAgentAppName, config.UserAgentUrl))
+                client.DefaultRequestHeaders.UserAgent.Add(value);
         });
     }
 
@@ -55,20 +57,5 @@ public class Plugin : IPlugin, IPluginServiceRegistration, IPluginApplicationReg
         var config = configProvider.Load();
         var registry = services.GetRequiredService<RecurringJobRegistry>();
         registry.Register<SyoboiSweepJob>(interval: TimeSpan.FromHours(Math.Max(1, config.SweepIntervalHours)), runImmediately: true);
-    }
-
-    private static string SanitizeToken(string value)
-    {
-        // ProductInfoHeaderValue's product name must be a valid HTTP token; strip
-        // whitespace and anything else that would make it reject the value.
-        var chars = value.ToCharArray();
-        var builder = new System.Text.StringBuilder(chars.Length);
-        foreach (var c in chars)
-        {
-            if (char.IsLetterOrDigit(c) || c is '-' or '.' or '_')
-                builder.Append(c);
-        }
-
-        return builder.Length > 0 ? builder.ToString() : "Shoko.Plugin.Syoboi";
     }
 }

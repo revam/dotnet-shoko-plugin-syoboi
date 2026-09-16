@@ -56,9 +56,11 @@ public class Configuration : IAiringScheduleProviderConfiguration, INewtonsoftJs
     public int SweepIntervalHours { get; set; } = 24 * 7;
 
     /// <summary>
-    /// Restricts which Syoboi channel groups (<c>ChGroupLookup</c> names) are
-    /// tracked. Empty means every non-radio group. Radio is always skipped
-    /// regardless of this list.
+    /// Restricts which Syoboi channel groups (<c>ChGroupLookup</c>'s
+    /// <c>ChGroupName</c>) are tracked, e.g. <c>テレビ 関東</c>,
+    /// <c>BSデジタル</c>, <c>スカパー</c>, <c>インターネット</c> or
+    /// <c>AbemaTV</c>. Empty means every non-radio group. Radio is always
+    /// skipped regardless of this list.
     /// </summary>
     [Display(Name = "Allowed Channel Groups")]
     public List<string> AllowedChannelGroups { get; set; } = [];

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Shoko.Abstractions.Metadata.Airing;
@@ -11,12 +12,14 @@ namespace Shoko.Plugin.Syoboi.Mapping;
 /// filtering, exactly matching "one schedule per AniDB anime and ChID" from
 /// the airing schedule plan.
 /// </summary>
+/// <param name="TitleID">The Syoboi title ID the programs belong to.</param>
 /// <param name="ChID">The Syoboi channel ID; also the schedule's key.</param>
 /// <param name="ChannelName">The name to register the channel under.</param>
 /// <param name="ChannelAliases">Extra names (e.g. the EPG name) to register as aliases.</param>
 /// <param name="ChannelType">The channel's classified type.</param>
 /// <param name="Programs">The channel's surviving program entries for this title.</param>
 public sealed record SyoboiChannelBundle(
+    int TitleID,
     int ChID,
     string ChannelName,
     IReadOnlyList<string> ChannelAliases,
@@ -32,7 +35,19 @@ public sealed record SyoboiChannelBundle(
 /// <param name="EpisodeNumber">The AniDB episode number (Syoboi's <c>Count</c>).</param>
 /// <param name="AnidbEpisodeID">The AniDB episode ID it was matched to.</param>
 /// <param name="AiredAtUtc">The airing's start time in UTC, or <c>null</c> if it couldn't be parsed.</param>
-public sealed record SyoboiEpisodeAiringDraft(string PID, int EpisodeNumber, int AnidbEpisodeID, System.DateTime? AiredAtUtc)
+/// <param name="OriginalAiredAtUtc">
+/// The slot the run normally occupies, in UTC, when this one was pushed back
+/// from it; otherwise <c>null</c>.
+/// </param>
+/// <param name="IsDelayed">Whether this slot was pushed back from the run's usual time.</param>
+public sealed record SyoboiEpisodeAiringDraft(
+    string PID,
+    int EpisodeNumber,
+    int AnidbEpisodeID,
+    DateTime? AiredAtUtc,
+    DateTime? OriginalAiredAtUtc = null,
+    bool IsDelayed = false
+)
 {
     /// <summary>
     /// The stable per-schedule key for this airing, as the plan specifies:
@@ -58,18 +73,23 @@ public static class SyoboiScheduleMapper
     /// <param name="lookup">The lookup result the entries, channels and channel groups come from.</param>
     /// <param name="allowedChannelGroupNames">
     /// Optional. When non-empty, only channels belonging to one of these
-    /// channel group names (<c>ChGName</c>, matched case-insensitively) are
+    /// channel group names (<c>ChGroupName</c>, matched case-insensitively) are
     /// included. <c>null</c> or empty means every non-radio group.
+    /// </param>
+    /// <param name="allowMissingEpisodeNumbers">
+    /// Whether slots with no <c>Count</c> are kept; see
+    /// <see cref="SyoboiProgramFilter.ShouldSkip(SyoboiProgramEntry, bool)"/>.
     /// </param>
     /// <returns>One bundle per channel that has at least one usable program entry.</returns>
     public static IReadOnlyList<SyoboiChannelBundle> BuildChannelBundles(
         int titleId,
         SyoboiLookupResult lookup,
-        IReadOnlySet<string>? allowedChannelGroupNames = null)
+        IReadOnlySet<string>? allowedChannelGroupNames = null,
+        bool allowMissingEpisodeNumbers = false)
     {
         var bundles = new List<SyoboiChannelBundle>();
         var programsByChannel = lookup.Programs
-            .Where(entry => entry.TID == titleId && !SyoboiProgramFilter.ShouldSkip(entry))
+            .Where(entry => entry.TID == titleId && !SyoboiProgramFilter.ShouldSkip(entry, allowMissingEpisodeNumbers))
             .GroupBy(entry => entry.ChID);
 
         foreach (var group in programsByChannel)
@@ -80,10 +100,10 @@ public static class SyoboiScheduleMapper
             if (!lookup.ChannelGroups.TryGetValue(channel.ChGID, out var channelGroup))
                 continue;
 
-            if (allowedChannelGroupNames is { Count: > 0 } && !allowedChannelGroupNames.Contains(channelGroup.ChGName))
+            if (allowedChannelGroupNames is { Count: > 0 } && !allowedChannelGroupNames.Contains(channelGroup.ChGroupName))
                 continue;
 
-            var channelType = SyoboiChannelGroupClassifier.Classify(channelGroup.ChGName);
+            var channelType = SyoboiChannelGroupClassifier.Classify(channelGroup.ChGroupName);
             if (channelType is null)
                 continue; // Radio.
 
@@ -92,7 +112,7 @@ public static class SyoboiScheduleMapper
                 ? [channel.ChiEPGName]
                 : [];
 
-            bundles.Add(new SyoboiChannelBundle(channel.ChID, displayName, aliases, channelType.Value, [.. group]));
+            bundles.Add(new SyoboiChannelBundle(titleId, channel.ChID, displayName, aliases, channelType.Value, [.. group]));
         }
 
         return bundles;
@@ -105,23 +125,29 @@ public static class SyoboiScheduleMapper
     /// <param name="programs">The program entries to map.</param>
     /// <param name="anidbEpisodeIdsByNumber">
     /// The anime's normal-episode AniDB episode IDs, keyed by episode number.
+    /// When it holds exactly one episode, slots with no episode number of
+    /// their own are mapped onto it.
     /// </param>
     /// <returns>One draft per program entry that maps to a known episode.</returns>
     public static IReadOnlyList<SyoboiEpisodeAiringDraft> BuildEpisodeDrafts(
         IReadOnlyList<SyoboiProgramEntry> programs,
         IReadOnlyDictionary<int, int> anidbEpisodeIdsByNumber)
     {
+        // A film or a one-off special has a single broadcast and no episode
+        // number to go with it; when the anime it maps onto has exactly one
+        // episode, that episode is the only thing the slot can be.
+        var soleEpisodeNumber = anidbEpisodeIdsByNumber.Count is 1 ? anidbEpisodeIdsByNumber.Keys.First() : (int?)null;
+
         var drafts = new List<SyoboiEpisodeAiringDraft>();
         foreach (var entry in programs)
         {
-            if (entry.Count is not { } episodeNumber)
+            if ((entry.Count ?? soleEpisodeNumber) is not { } episodeNumber)
                 continue;
 
             if (!anidbEpisodeIdsByNumber.TryGetValue(episodeNumber, out var episodeId))
                 continue;
 
-            var airedAt = SyoboiTimeConverter.ToUtc(entry.StTime, entry.StOffset);
-            drafts.Add(new SyoboiEpisodeAiringDraft(entry.PID, episodeNumber, episodeId, airedAt));
+            drafts.Add(new SyoboiEpisodeAiringDraft(entry.PID, episodeNumber, episodeId, entry.StartedAt, entry.OriginalStartedAt, entry.IsDelayed));
         }
 
         return drafts;

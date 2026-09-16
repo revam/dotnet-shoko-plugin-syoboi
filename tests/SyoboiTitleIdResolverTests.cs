@@ -11,6 +11,20 @@ public class SyoboiTitleIdResolverTests
         => new() { Type = type, Name = name, Url = url };
 
     [Fact]
+    public void Finds_the_title_id_in_the_resource_shape_the_server_really_emits()
+    {
+        // Verbatim from Shoko.Server/Models/AniDB/AniDB_Anime.cs, which builds
+        // this resource whenever AniDB_Anime.SyoboiID is set — here for AniDB
+        // anime 69, whose SyoboiID is 4015.
+        var resource = new Resource { Type = ResourceType.CrossReference, Name = "syoboi", Url = "https://cal.syoboi.jp/tid/4015/time" };
+
+        var found = SyoboiTitleIdResolver.TryGetTitleId([resource], out var titleId);
+
+        Assert.True(found);
+        Assert.Equal(4015, titleId);
+    }
+
+    [Fact]
     public void Finds_the_title_id_from_the_syoboi_resource()
     {
         var found = SyoboiTitleIdResolver.TryGetTitleId([MakeResource("https://cal.syoboi.jp/tid/6309/time")], out var titleId);

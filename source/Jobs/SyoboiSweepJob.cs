@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,39 +17,72 @@ using Shoko.QueueProcessor.Concurrency;
 namespace Shoko.Plugin.Syoboi.Jobs;
 
 /// <summary>
-/// Periodic sweep of every locally known AniDB anime with a Syoboi title ID,
-/// fetched in one request as the airing schedule plan asks providers to:
-/// "Syoboi sweeps every tracked title in one weekly request." Registered as
-/// a recurring job from <c>Plugin.RegisterServices(IApplicationBuilder, IApplicationPaths)</c>.
+/// Periodic sweep of every locally known AniDB anime with a Syoboi title ID.
+/// Registered as a recurring job from
+/// <c>Plugin.RegisterServices(IApplicationBuilder, IApplicationPaths)</c>.
 /// </summary>
 /// <remarks>
+/// <para>
+/// One execution covers at most <see cref="MaxAnimePerRun"/> anime and then
+/// enqueues itself for the next slice, rather than walking the whole library
+/// in one go: at one request per second a large library would otherwise hold
+/// a worker for hours and trip the queue watchdog. Each slice is a handful of
+/// requests — Syoboi takes a comma-separated list of title IDs, so
+/// <see cref="SyoboiApiClient.MaxTitleIdsPerRequest"/> anime share one
+/// request — and the channel directory is fetched once a day and shared
+/// across every slice by <see cref="SyoboiChannelDirectoryCache"/>.
+/// </para>
+/// <para>
 /// <c>[DatabaseRequired]</c> and <c>[NetworkRequired]</c> hold the job out of
 /// the worker pool until the database is ready and connectivity is
-/// confirmed. <c>[DisallowConcurrentExecution]</c> keeps a slow sweep from
-/// overlapping the next scheduled one.
+/// confirmed. <c>[DisallowConcurrentExecution]</c> keeps a slow slice from
+/// overlapping the next one.
+/// </para>
 /// </remarks>
 [DatabaseRequired]
 [NetworkRequired]
 [DisallowConcurrentExecution]
 public sealed class SyoboiSweepJob : IQueueJob
 {
+    /// <summary>
+    /// How many anime one execution covers. Five
+    /// <see cref="SyoboiApiClient.MaxTitleIdsPerRequest"/>-sized requests at
+    /// one request per second, so a slice takes seconds rather than the
+    /// hours a whole-library walk would.
+    /// </summary>
+    public const int MaxAnimePerRun = 500;
+
     // Spreads sweeps started at the same moment across many installs (e.g.
     // everyone restarting a container image at the top of the hour) over a
-    // five-minute window, as the plan asks distributed tools to do.
-    private static readonly TimeSpan MaxStartJitter = TimeSpan.FromMinutes(5);
+    // five-minute window, as the plan asks distributed tools to do. Only the
+    // first slice waits; the continuations are already spread out by it.
+    private static readonly TimeSpan _maxStartJitter = TimeSpan.FromMinutes(5);
 
     private readonly ILogger<SyoboiSweepJob> _logger;
     private readonly IMetadataService _metadataService;
     private readonly ConfigurationProvider<Configuration> _configurationProvider;
     private readonly SyoboiAiringScheduleProvider _provider;
     private readonly SyoboiApiClient _apiClient;
+    private readonly IQueueScheduler _scheduler;
     private readonly TimeProvider _timeProvider;
+
+    /// <summary>
+    /// Only anime with an AniDB ID above this are swept, so each execution
+    /// picks up where the last one left off. <c>0</c> starts a fresh sweep,
+    /// which is what the recurring registration enqueues.
+    /// </summary>
+    public int AfterAnidbAnimeID { get; set; }
 
     /// <inheritdoc/>
     public string TypeName => "Syoboi Calendar Sweep";
 
     /// <inheritdoc/>
     public string Title => "Sweeping tracked anime against Syoboi Calendar...";
+
+    /// <inheritdoc/>
+    public IDictionary<string, object> Details => AfterAnidbAnimeID is 0
+        ? new Dictionary<string, object>()
+        : new Dictionary<string, object> { { "After AniDB Anime ID", AfterAnidbAnimeID.ToString(CultureInfo.InvariantCulture) } };
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SyoboiSweepJob"/> class.
@@ -59,6 +93,7 @@ public sealed class SyoboiSweepJob : IQueueJob
         ConfigurationProvider<Configuration> configurationProvider,
         SyoboiAiringScheduleProvider provider,
         SyoboiApiClient apiClient,
+        IQueueScheduler scheduler,
         TimeProvider? timeProvider = null)
     {
         _logger = logger;
@@ -66,27 +101,35 @@ public sealed class SyoboiSweepJob : IQueueJob
         _configurationProvider = configurationProvider;
         _provider = provider;
         _apiClient = apiClient;
+        _scheduler = scheduler;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <inheritdoc/>
     public async Task Process()
     {
-        var jitter = TimeSpan.FromMilliseconds(Random.Shared.NextDouble() * MaxStartJitter.TotalMilliseconds);
-        if (jitter > TimeSpan.Zero)
-            await Task.Delay(jitter, _timeProvider, CancellationToken.None).ConfigureAwait(false);
+        if (AfterAnidbAnimeID is 0)
+        {
+            var jitter = TimeSpan.FromMilliseconds(Random.Shared.NextDouble() * _maxStartJitter.TotalMilliseconds);
+            if (jitter > TimeSpan.Zero)
+                await Task.Delay(jitter, _timeProvider, CancellationToken.None).ConfigureAwait(false);
+        }
 
         var config = _configurationProvider.Load();
-        var candidates = FindCandidates(config).ToList();
-        if (candidates.Count == 0)
+        var candidates = FindCandidates(config)
+            .Where(candidate => candidate.Anime.ID > AfterAnidbAnimeID)
+            .OrderBy(candidate => candidate.Anime.ID)
+            .Take(MaxAnimePerRun)
+            .ToList();
+        if (candidates.Count is 0)
         {
-            _logger.LogDebug("Syoboi Calendar sweep found no tracked anime.");
+            _logger.LogDebug("Syoboi Calendar sweep found no more tracked anime after AniDB anime {AnimeID}.", AfterAnidbAnimeID);
             return;
         }
 
-        _logger.LogInformation("Sweeping {Count} anime against Syoboi Calendar in one request.", candidates.Count);
+        _logger.LogInformation("Sweeping {Count} anime against Syoboi Calendar, starting after AniDB anime {AnimeID}.", candidates.Count, AfterAnidbAnimeID);
 
-        var lookup = await _apiClient.ProgLookupAsync([.. candidates.Select(c => c.TitleId)]).ConfigureAwait(false);
+        var lookup = await _apiClient.ProgLookupAsync([.. candidates.Select(candidate => candidate.TitleId)]).ConfigureAwait(false);
 
         var updated = 0;
         foreach (var (anime, titleId) in candidates)
@@ -96,6 +139,14 @@ public sealed class SyoboiSweepJob : IQueueJob
         }
 
         _logger.LogInformation("Syoboi Calendar sweep wrote schedules for {Updated}/{Count} anime.", updated, candidates.Count);
+
+        // A full slice means there is probably more to do; the run that finds
+        // nothing left is the one that ends the sweep, and costs no requests.
+        if (candidates.Count < MaxAnimePerRun)
+            return;
+
+        var lastAnimeId = candidates[^1].Anime.ID;
+        await _scheduler.Enqueue<SyoboiSweepJob>(job => job.AfterAnidbAnimeID = lastAnimeId).ConfigureAwait(false);
     }
 
     private IEnumerable<(IAnidbAnime Anime, int TitleId)> FindCandidates(Configuration config)

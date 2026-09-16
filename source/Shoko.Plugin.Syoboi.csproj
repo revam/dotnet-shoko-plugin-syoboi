@@ -16,14 +16,11 @@
     </PropertyGroup>
 
     <!--
-        The airing schedule abstractions are still being implemented alongside
-        this plugin (Shoko.Abstractions.Metadata.Airing), so we build against
-        the in-progress project instead of the last published NuGet package.
-        Switch this back to a PackageReference once a release carrying the
-        airing schedule contract ships.
+        The server supplies the abstractions at runtime, so only compile-time
+        assets are referenced here.
     -->
     <ItemGroup>
-        <ProjectReference Include="..\..\Shoko\Shoko.Abstractions\Shoko.Abstractions.csproj" Private="false" />
+        <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.89" ExcludeAssets="runtime" />
     </ItemGroup>
 
     <ItemGroup>
