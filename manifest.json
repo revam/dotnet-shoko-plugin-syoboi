@@ -3,7 +3,7 @@
   "id": "2f4b7a3e-9c1d-4f6a-8b2e-5d3c7a1f9e0b",
   "type": "package",
   "name": "Syoboi Calendar",
-  "overview": "Development build. The published identity - overview, tags and releases - lives on this repository's `metadata` branch at stable/manifest.json, and CI pulls it over this file before it builds anything. This copy exists so a local build has an id to match against, and says so rather than carrying a second description to keep in sync.",
+  "overview": "This is a stub manifest, not the published one. If you are reading it as a repository feed, you are on the wrong branch: the published identity and releases live on this repository's `metadata` branch, at `manifest.json`. CI pulls that file over this one before it builds anything. This copy exists so a local build has an id to match against.",
   "authors": "revam",
   "repository_url": "https://github.com/revam/dotnet-shoko-plugin-syoboi",
   "releases": []
