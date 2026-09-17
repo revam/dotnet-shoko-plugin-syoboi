@@ -24,16 +24,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <!-- `native` goes with `runtime`: on its own `runtime` leaves the queue
-             engine's transitive SQLite and SqlClient packages free to drop their
-             whole `runtimes/` tree into the plugin output. -->
-        <PackageReference Include="Shoko.QueueProcessor" Version="6.0.0-alpha.6" ExcludeAssets="runtime;native" />
-    </ItemGroup>
-
-    <ItemGroup>
         <!-- Pulls in Microsoft.Extensions.{Logging,DependencyInjection,Hosting,Http}
-             for us, and is required for IPluginApplicationRegistration's
-             IApplicationBuilder parameter used to register the recurring sweep job. -->
+             for us. -->
         <FrameworkReference Include="Microsoft.AspNetCore.App" />
     </ItemGroup>
 
