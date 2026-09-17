@@ -46,16 +46,6 @@ public class Configuration : IAiringScheduleProviderConfiguration, INewtonsoftJs
     public int RecentlyEndedWindowDays { get; set; } = 90;
 
     /// <summary>
-    /// How often the sweep job re-fetches every tracked title in one request.
-    /// Syoboi asks clients to be gentle; there is little reason to sweep more
-    /// often than weekly.
-    /// </summary>
-    [Display(Name = "Sweep Interval (Hours)")]
-    [Range(1, 24 * 30)]
-    [DefaultValue(24 * 7)]
-    public int SweepIntervalHours { get; set; } = 24 * 7;
-
-    /// <summary>
     /// Restricts which Syoboi channel groups (<c>ChGroupLookup</c>'s
     /// <c>ChGroupName</c>) are tracked, e.g. <c>テレビ 関東</c>,
     /// <c>BSデジタル</c>, <c>スカパー</c>, <c>インターネット</c> or

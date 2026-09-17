@@ -24,10 +24,18 @@ namespace Shoko.Plugin.Syoboi;
 /// title ID.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Only <see cref="AiringKind.Original"/> is ever produced: Syoboi tracks the
 /// original Japanese broadcast/stream, not subtitled or dubbed releases.
+/// </para>
+/// <para>
+/// Every lookup asks Syoboi about a window rather than a whole run, so every
+/// write is a delta through <c>MergeAirings</c>: a slot inside that window
+/// which Syoboi no longer lists is named as a removal, and everything outside
+/// it is left exactly as it is.
+/// </para>
 /// </remarks>
-public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Configuration>
+public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Configuration>, ISweepingAiringScheduleProvider
 {
     private static readonly IReadOnlySet<AiringKind> _availableKinds = new HashSet<AiringKind> { AiringKind.Original };
 
@@ -46,6 +54,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
     private readonly IAiringScheduleService _airingScheduleService;
     private readonly IMetadataService _metadataService;
     private readonly SyoboiApiClient _apiClient;
+    private readonly TimeProvider _timeProvider;
 
     /// <inheritdoc/>
     public string Name => "Syoboi Calendar";
@@ -64,19 +73,24 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
     /// <param name="airingScheduleService">The airing schedule service.</param>
     /// <param name="metadataService">The metadata service, used to resolve a Shoko series' AniDB anime.</param>
     /// <param name="apiClient">The Syoboi API client.</param>
+    /// <param name="timeProvider">Optional. The time provider to use. Defaults to <see cref="TimeProvider.System"/>.</param>
     public SyoboiAiringScheduleProvider(
         ILogger<SyoboiAiringScheduleProvider> logger,
         ConfigurationProvider<Configuration> configurationProvider,
         IAiringScheduleService airingScheduleService,
         IMetadataService metadataService,
-        SyoboiApiClient apiClient)
+        SyoboiApiClient apiClient,
+        TimeProvider? timeProvider = null)
     {
         _logger = logger;
         _configurationProvider = configurationProvider;
         _airingScheduleService = airingScheduleService;
         _metadataService = metadataService;
         _apiClient = apiClient;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
+
+    #region Refreshing
 
     /// <inheritdoc/>
     public async Task<bool> RefreshAsync(ISeries series, CancellationToken cancellationToken = default)
@@ -96,11 +110,11 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
             return false;
         }
 
-        var (fromUtc, toUtc) = GetLookupWindow(anime);
+        var (fromUtc, toUtc) = GetLookupWindow(anime, _timeProvider.GetUtcNow().UtcDateTime);
         _logger.LogDebug("Refreshing AniDB anime {AnimeID} from Syoboi title {TitleID}, covering {From:u} — {To:u}.", anime.ID, titleId, fromUtc, toUtc);
 
         var lookup = await _apiClient.ProgLookupAsync([titleId], fromUtc, toUtc, cancellationToken).ConfigureAwait(false);
-        return ApplyLookupResult(anime, titleId, lookup);
+        return ApplyLookupResult(anime, titleId, lookup, fromUtc, toUtc);
     }
 
     /// <summary>
@@ -110,10 +124,10 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
     /// earlier slots.
     /// </summary>
     /// <param name="anime">The anime being refreshed.</param>
+    /// <param name="now">The current time, in UTC.</param>
     /// <returns>The window, in UTC.</returns>
-    private static (DateTime FromUtc, DateTime ToUtc) GetLookupWindow(IAnidbAnime anime)
+    private static (DateTime FromUtc, DateTime ToUtc) GetLookupWindow(IAnidbAnime anime, DateTime now)
     {
-        var now = DateTime.UtcNow;
         var to = anime.EndDate is { } endDate ? Min(endDate.ToDateTime() + _runMargin, now + SyoboiApiClient.DefaultLookahead) : now + SyoboiApiClient.DefaultLookahead;
         var from = anime.AirDate is { } airDate ? Max(airDate.ToDateTime() - _runMargin, to - _maxRunWindow) : to - _maxRunWindow;
         return to > from ? (from, to) : (from, from + _runMargin);
@@ -123,18 +137,185 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         static DateTime Max(DateTime left, DateTime right) => left > right ? left : right;
     }
 
+    #endregion
+
+    #region Sweeping
+
+    /// <summary>
+    /// Syoboi's volunteers fill the calendar a few weeks ahead of broadcast,
+    /// and the site asks clients to be gentle, so walking every tracked title
+    /// once a week is plenty. The value actually used is the user's own
+    /// <c>AiringScheduleProviderInfo.SweepInterval</c>, which this only seeds,
+    /// and the server never sweeps more often than every fifteen minutes.
+    /// </summary>
+    public TimeSpan? SuggestedSweepInterval => TimeSpan.FromDays(7);
+
+    /// <inheritdoc/>
+    public async Task<string?> SweepAsync(string? cursor, CancellationToken cancellationToken)
+    {
+        var after = ParseCursor(cursor);
+        var config = _configurationProvider.Load();
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var candidates = FindCandidates(config, now)
+            .Where(candidate => candidate.Anime.ID > after)
+            .OrderBy(candidate => candidate.Anime.ID)
+            .ToList();
+        if (candidates.Count is 0)
+        {
+            _logger.LogDebug("The sweep found no tracked anime after AniDB anime {AnimeID}, and has come full circle.", after);
+            return null;
+        }
+
+        // Syoboi takes a comma-separated list of title IDs, so a chunk costs
+        // one request per hundred anime rather than one per anime, and the
+        // channel directory behind them is fetched once a day and shared.
+        var fromUtc = now - SyoboiApiClient.DefaultLookback;
+        var toUtc = now + SyoboiApiClient.DefaultLookahead;
+        var swept = 0;
+        var written = 0;
+        foreach (var batch in candidates.Chunk(SyoboiApiClient.MaxTitleIdsPerRequest))
+        {
+            if (cancellationToken.IsCancellationRequested)
+                return ResumeAfter(after, swept);
+
+            SyoboiLookupResult lookup;
+            try
+            {
+                lookup = await _apiClient
+                    .ProgLookupAsync([.. batch.Select(candidate => candidate.TitleId)], fromUtc, toUtc, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The budget ran out mid-request. Handing back the ground
+                // already covered beats letting the chunk end as a timeout,
+                // which would walk this batch again from the old cursor.
+                return ResumeAfter(after, swept);
+            }
+
+            foreach (var (anime, titleId) in batch)
+            {
+                if (ApplyLookupResult(anime, titleId, lookup, fromUtc, toUtc))
+                    written++;
+            }
+
+            swept += batch.Length;
+            after = batch[^1].Anime.ID;
+        }
+
+        _logger.LogDebug(
+            "The sweep covered the last {Count} tracked anime, wrote schedules for {Written} of them, and has come full circle.",
+            swept,
+            written
+        );
+        return null;
+
+        string ResumeAfter(int animeId, int count)
+        {
+            _logger.LogDebug(
+                "The sweep covered {Count} anime before running out of budget; the next chunk resumes after AniDB anime {AnimeID}.",
+                count,
+                animeId
+            );
+            return FormatCursor(animeId);
+        }
+    }
+
+    /// <summary>
+    /// Reads the AniDB anime ID the last chunk finished at out of the cursor.
+    /// A cursor that cannot be read starts the sweep over rather than ending
+    /// it, since an unreadable cursor says nothing about what has been
+    /// covered.
+    /// </summary>
+    /// <param name="cursor">The cursor the chunk was called with.</param>
+    /// <returns>The AniDB anime ID to resume after; <c>0</c> starts a fresh sweep.</returns>
+    private int ParseCursor(string? cursor)
+    {
+        if (string.IsNullOrEmpty(cursor))
+            return 0;
+
+        if (int.TryParse(cursor, NumberStyles.None, CultureInfo.InvariantCulture, out var animeId))
+            return animeId;
+
+        _logger.LogWarning("Starting a fresh sweep: the cursor \"{Cursor}\" is not an AniDB anime ID.", cursor);
+        return 0;
+    }
+
+    /// <summary>
+    /// Writes the AniDB anime ID to resume after as a cursor.
+    /// </summary>
+    /// <param name="animeId">The AniDB anime ID the chunk finished at.</param>
+    /// <returns>The cursor.</returns>
+    private static string FormatCursor(int animeId)
+        => animeId.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Every locally known AniDB anime that carries a Syoboi title ID, and is
+    /// relevant enough to spend a request on.
+    /// </summary>
+    /// <param name="config">The configuration to filter by.</param>
+    /// <param name="now">The current time, in UTC.</param>
+    /// <returns>The anime to sweep, each with its Syoboi title ID.</returns>
+    private IEnumerable<(IAnidbAnime Anime, int TitleId)> FindCandidates(Configuration config, DateTime now)
+    {
+        var upcomingCutoff = now.AddDays(config.UpcomingWindowDays);
+        var endedCutoff = now.AddDays(-config.RecentlyEndedWindowDays);
+
+        foreach (var series in _metadataService.GetAllSeriesForProvider(IMetadataService.ProviderName.AniDB))
+        {
+            if (series is not IAnidbAnime anime)
+                continue;
+
+            if (!SyoboiTitleIdResolver.TryGetTitleId(anime.Resources, out var titleId))
+                continue;
+
+            if (config.ActiveOnly && !IsRelevant(anime, upcomingCutoff, endedCutoff))
+                continue;
+
+            yield return (anime, titleId);
+        }
+    }
+
+    /// <summary>
+    /// Whether an anime is currently airing, about to air, or recently ended.
+    /// </summary>
+    /// <param name="anime">The anime to judge.</param>
+    /// <param name="upcomingCutoff">The furthest ahead an air date may be.</param>
+    /// <param name="endedCutoff">The furthest back an end date may be.</param>
+    /// <returns><c>true</c> when the anime is worth sweeping.</returns>
+    private static bool IsRelevant(IAnidbAnime anime, DateTime upcomingCutoff, DateTime endedCutoff)
+    {
+        // No known air date at all: keep it, since we have nothing to filter
+        // on and it's cheap to let one extra title ride along in the batch.
+        if (anime.AirDate is not { } airDate)
+            return true;
+
+        if (airDate.ToDateTime() > upcomingCutoff)
+            return false;
+
+        var effectiveEnd = anime.EndDate?.ToDateTime();
+        return effectiveEnd is null || effectiveEnd.Value >= endedCutoff;
+    }
+
+    #endregion
+
+    #region Writing
+
     /// <summary>
     /// Applies an already-fetched lookup result to one AniDB anime, writing
     /// channels, schedules and airings through <c>IAiringScheduleService</c>.
     /// Shared between <see cref="RefreshAsync(ISeries,CancellationToken)"/>
-    /// (a single-title request) and the recurring sweep job (one request
-    /// covering every tracked title at once).
+    /// (a single-title request) and
+    /// <see cref="SweepAsync(string,CancellationToken)"/> (one request
+    /// covering a hundred titles at once).
     /// </summary>
     /// <param name="anime">The AniDB anime the lookup is for.</param>
     /// <param name="titleId">The Syoboi title ID <paramref name="anime"/> was looked up by.</param>
     /// <param name="lookup">The lookup result, which may cover other titles too.</param>
+    /// <param name="fromUtc">The start of the window the lookup asked about, in UTC.</param>
+    /// <param name="toUtc">The end of the window the lookup asked about, in UTC.</param>
     /// <returns><c>true</c> if at least one schedule was written.</returns>
-    public bool ApplyLookupResult(IAnidbAnime anime, int titleId, SyoboiLookupResult lookup)
+    private bool ApplyLookupResult(IAnidbAnime anime, int titleId, SyoboiLookupResult lookup, DateTime fromUtc, DateTime toUtc)
     {
         ArgumentNullException.ThrowIfNull(anime);
         ArgumentNullException.ThrowIfNull(lookup);
@@ -171,7 +352,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         var wroteAny = false;
         foreach (var bundle in bundles)
         {
-            if (!TryWriteSchedule(anime, bundle, timeZone, isFinished, episodesByNumber, episodesById))
+            if (!TryWriteSchedule(anime, bundle, timeZone, isFinished, episodesByNumber, episodesById, fromUtc, toUtc))
                 continue;
 
             wroteAny = true;
@@ -210,13 +391,28 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         );
     }
 
+    /// <summary>
+    /// Writes one channel's worth of a title's slots as a schedule and its
+    /// airings.
+    /// </summary>
+    /// <param name="anime">The AniDB anime the schedule is for.</param>
+    /// <param name="bundle">The channel's surviving slots.</param>
+    /// <param name="timeZone">The schedule's display time zone.</param>
+    /// <param name="isFinished">Whether the anime's run has ended.</param>
+    /// <param name="episodesByNumber">The anime's normal-episode IDs, keyed by episode number.</param>
+    /// <param name="episodesById">The anime's episodes, keyed by AniDB episode ID.</param>
+    /// <param name="fromUtc">The start of the window the lookup asked about, in UTC.</param>
+    /// <param name="toUtc">The end of the window the lookup asked about, in UTC.</param>
+    /// <returns><c>true</c> if the schedule was written.</returns>
     private bool TryWriteSchedule(
         IAnidbAnime anime,
         SyoboiChannelBundle bundle,
         TimeZoneInfo? timeZone,
         bool isFinished,
         IReadOnlyDictionary<int, int> episodesByNumber,
-        IReadOnlyDictionary<int, IAnidbEpisode> episodesById)
+        IReadOnlyDictionary<int, IAnidbEpisode> episodesById,
+        DateTime fromUtc,
+        DateTime toUtc)
     {
         var drafts = SyoboiScheduleMapper.BuildEpisodeDrafts(bundle.Programs, episodesByNumber);
         if (drafts.Count is 0)
@@ -274,7 +470,12 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
             return false;
         }
 
-        var written = _airingScheduleService.SetAirings(this, schedule, airings);
+        // The lookup only asked about a window, so this is a delta: the slots
+        // Syoboi still lists are submitted, the ones it has dropped from that
+        // window are named as removals, and any airing outside the window is
+        // left as it stands.
+        var withdrawn = FindWithdrawnAirings(schedule, airings, fromUtc, toUtc);
+        var written = _airingScheduleService.MergeAirings(this, schedule, airings, withdrawn);
 
         // A single broadcast slot covering several episodes (a marathon
         // block, or a double-length episode split into two AniDB entries)
@@ -289,6 +490,43 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         return true;
     }
 
+    /// <summary>
+    /// The airings already on the schedule, inside the window just looked up,
+    /// that the lookup no longer lists. A slot Syoboi retracted or moved out
+    /// of the window reaches the service through this, the same way leaving
+    /// it out of a whole-line write would.
+    /// </summary>
+    /// <param name="schedule">The schedule being written.</param>
+    /// <param name="airings">The airings this write submits.</param>
+    /// <param name="fromUtc">The start of the window the lookup asked about, in UTC.</param>
+    /// <param name="toUtc">The end of the window the lookup asked about, in UTC.</param>
+    /// <returns>The airings to name as removals.</returns>
+    private IReadOnlyList<IEpisodeAiring> FindWithdrawnAirings(
+        IAiringSchedule schedule,
+        IReadOnlyList<EpisodeAiringData> airings,
+        DateTime fromUtc,
+        DateTime toUtc
+    )
+    {
+        var submitted = new HashSet<string>(airings.Select(airing => airing.Key!), StringComparer.Ordinal);
+        return _airingScheduleService
+            .GetAiringsForSchedule(schedule.ID, new EpisodeAiringFilteringOptions { IncludeEstimates = false })
+            .Where(airing => airing.AiredAt is { } airedAt && airedAt >= fromUtc && airedAt <= toUtc && !submitted.Contains(airing.Key))
+            .ToList();
+    }
+
+    #endregion
+
+    #region Resolving
+
+    /// <summary>
+    /// Resolves the AniDB anime a refresh should be carried out against. A
+    /// refresh arrives for whatever entity the caller had in hand, which for
+    /// an ordinary series refresh is a shoko series rather than the AniDB
+    /// anime Syoboi is keyed through.
+    /// </summary>
+    /// <param name="series">The series the refresh was requested for.</param>
+    /// <returns>The AniDB anime, or <c>null</c> when the series reaches none.</returns>
     private IAnidbAnime? ResolveAnidbAnime(ISeries series)
     {
         if (series is IAnidbAnime anidbAnime)
@@ -300,4 +538,6 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
 
         return null;
     }
+
+    #endregion
 }

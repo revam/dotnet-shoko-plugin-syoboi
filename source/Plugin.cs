@@ -1,11 +1,8 @@
 using System;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.Config;
 using Shoko.Abstractions.Plugin;
 using Shoko.Plugin.Syoboi.Http;
-using Shoko.Plugin.Syoboi.Jobs;
-using Shoko.QueueProcessor.Scheduling;
 
 namespace Shoko.Plugin.Syoboi;
 
@@ -13,7 +10,7 @@ namespace Shoko.Plugin.Syoboi;
 /// Plugin providing airing schedules for Japanese TV and streaming broadcasts,
 /// sourced from cal.syoboi.jp (Syoboi Calendar).
 /// </summary>
-public class Plugin : IPlugin, IPluginServiceRegistration, IPluginApplicationRegistration
+public class Plugin : IPlugin, IPluginServiceRegistration
 {
     /// <inheritdoc/>
     public Guid ID { get; private init; } = new("2f4b7a3e-9c1d-4f6a-8b2e-5d3c7a1f9e0b");
@@ -30,9 +27,11 @@ public class Plugin : IPlugin, IPluginServiceRegistration, IPluginApplicationReg
     /// <inheritdoc/>
     public static void RegisterServices(IServiceCollection serviceCollection, IApplicationPaths applicationPaths)
     {
+        // The provider itself is not registered: the server finds it by
+        // reflection, constructs it with these services, and sweeps that very
+        // instance, so nothing here needs a reference to it.
         serviceCollection.AddSingleton<SyoboiRateLimiter>();
         serviceCollection.AddSingleton<SyoboiChannelDirectoryCache>();
-        serviceCollection.AddSingleton<SyoboiAiringScheduleProvider>();
 
         serviceCollection.AddHttpClient<SyoboiApiClient>((sp, client) =>
         {
@@ -47,15 +46,5 @@ public class Plugin : IPlugin, IPluginServiceRegistration, IPluginApplicationReg
             foreach (var value in SyoboiUserAgent.Build(config.UserAgentAppName, config.UserAgentUrl))
                 client.DefaultRequestHeaders.UserAgent.Add(value);
         });
-    }
-
-    /// <inheritdoc/>
-    public static void RegisterServices(IApplicationBuilder application, IApplicationPaths applicationPaths)
-    {
-        var services = application.ApplicationServices;
-        var configProvider = services.GetRequiredService<ConfigurationProvider<Configuration>>();
-        var config = configProvider.Load();
-        var registry = services.GetRequiredService<RecurringJobRegistry>();
-        registry.Register<SyoboiSweepJob>(interval: TimeSpan.FromHours(Math.Max(1, config.SweepIntervalHours)), runImmediately: true);
     }
 }
