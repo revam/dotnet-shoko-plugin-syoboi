@@ -474,8 +474,16 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         // Syoboi still lists are submitted, the ones it has dropped from that
         // window are named as removals, and any airing outside the window is
         // left as it stands.
+        //
+        // `KeepRemovalsAsHiatus` because a name here means absence, not a
+        // deletion: Syoboi dropping a slot from the window it was just asked
+        // about is the same signal as leaving it out of a whole-line write, and
+        // a future slot that stops being listed is a broadcast pulled rather
+        // than one that never existed. The service deletes a named removal
+        // otherwise, which is right for a source that states its removals.
         var withdrawn = FindWithdrawnAirings(schedule, airings, fromUtc, toUtc);
-        var written = _airingScheduleService.MergeAirings(this, schedule, airings, withdrawn);
+        var options = new EpisodeAiringUpdateOptions { KeepRemovalsAsHiatus = true };
+        var written = _airingScheduleService.MergeAirings(this, schedule, airings, withdrawn, options);
 
         // A single broadcast slot covering several episodes (a marathon
         // block, or a double-length episode split into two AniDB entries)
