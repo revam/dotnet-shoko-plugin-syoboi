@@ -4,7 +4,7 @@ A [Shoko](https://shokoanime.com/) plugin that provides Japanese TV and streamin
 
 ## Status
 
-This plugin builds against an **in-progress** revision of `Shoko.Abstractions` (the airing schedule contract described in the `airing-schedule-plan.md` design document), referenced by project path rather than a published NuGet package — see [Building from Source](#building-from-source). It exists to check that the design fits a real source and cannot be run against a released Shoko server yet: `IAiringScheduleService` has no server-side implementation to register the provider with, so `SyoboiAiringScheduleProvider` is never actually invoked outside of its own unit tests today. See [Known Gaps](#known-gaps) below.
+This plugin builds against a prerelease of `Shoko.Abstractions` 6.0, the first to carry the airing schedule contract, and needs a Shoko server built on the same contract.
 
 ## Features
 
@@ -97,14 +97,14 @@ How often the sweep runs is the server's setting rather than the plugin's: the p
 
 ## Known Gaps
 
-- **The airing schedule contract is still in progress.** `Shoko.Abstractions.Metadata.Airing` and its server-side implementation are being built alongside this plugin, so the contract can still change under it. Only the pure parsing, mapping and rate-limiting logic is unit tested here; the write path is exercised by running the plugin against a server.
+- **The airing schedule contract is a prerelease.** `Shoko.Abstractions.Metadata.Airing` can still change under this plugin. Only the parsing, mapping, rate-limiting and sweep logic is unit tested here; the write path is exercised by running the plugin against a server.
 - **Channel group classification is a heuristic.** `SyoboiChannelGroupClassifier` matches on markers in the group name (`ラジオ` → dropped, `インターネット`/`配信`/`Abema`/`ニコニコ` → streaming, everything else → television) rather than on the 28 known `ChGID` values, so a group Syoboi adds later still classifies sensibly. The marker list is tested against the real group names.
 - **Advance airings are not marked.** The airing contract has no way to say an airing is an advance one rather than part of the regular run, so the plugin recognises one but writes it like any other slot.
 - **No typed Syoboi title ID.** `IAnidbAnime` doesn't expose `SyoboiID` directly; `SyoboiTitleIdResolver` parses it back out of `Resources`. A typed field on the abstraction, mentioned as a possible follow-up in the airing schedule plan, would remove this entirely.
 
 ## Building from Source
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and a checkout of [ShokoServer](https://github.com/ShokoAnime/ShokoServer) alongside this repository (i.e. `../Shoko` relative to this repository's parent directory), since `Shoko.Plugin.Syoboi.csproj` references `Shoko.Abstractions` by project path rather than by package while the airing schedule contract is still in progress. Switch that reference back to a `PackageReference` once a release carrying it ships.
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). `Shoko.Abstractions` is a package reference, so the feed that carries the version in `Shoko.Plugin.Syoboi.csproj` has to be one of your NuGet sources.
 
 ```bash
 dotnet build Shoko.Plugin.Syoboi.slnx --configuration Release
