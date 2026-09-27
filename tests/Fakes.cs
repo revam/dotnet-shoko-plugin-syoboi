@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
@@ -87,8 +88,8 @@ internal static class Host
     /// <param name="anime">The anime the sweep walks.</param>
     /// <returns>The metadata service.</returns>
     public static IMetadataService MetadataService(IEnumerable<IAnidbAnime> anime)
-        => Stub.Of<IMetadataService>(("GetAllSeriesForProvider", args =>
-            (IMetadataService.ProviderName)args[0]! is IMetadataService.ProviderName.AniDB ? anime.Cast<ISeries>() : Enumerable.Empty<ISeries>()));
+        => Stub.Of<IMetadataService>(("GetAllSeriesForSource", args =>
+            (MetadataSource)args[0]! == MetadataSource.AniDB ? anime.Cast<ISeries>() : Enumerable.Empty<ISeries>()));
 
     /// <summary>
     /// An AniDB anime carrying a Syoboi title ID as a cross-reference
@@ -99,7 +100,7 @@ internal static class Host
     /// <returns>The anime.</returns>
     public static IAnidbAnime AnidbAnime(int animeId, int? syoboiTitleId = null)
         => Stub.Of<IAnidbAnime>(
-            ("ID", _ => animeId),
+            ("ID", _ => new MetadataGuid(MetadataSource.AniDB, MetadataEntityType.Series, animeId.ToString(CultureInfo.InvariantCulture))),
             ("Resources", _ => syoboiTitleId is { } titleId
                 ? new[] { new Resource { Type = ResourceType.CrossReference, Name = "Syoboi Calendar", Url = $"https://cal.syoboi.jp/tid/{titleId}/time" } }
                 : Array.Empty<Resource>()),

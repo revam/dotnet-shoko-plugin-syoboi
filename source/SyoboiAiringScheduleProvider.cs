@@ -106,12 +106,12 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
 
         if (!SyoboiTitleIdResolver.TryGetTitleId(anime.Resources, out var titleId))
         {
-            _logger.LogDebug("Skipping refresh for AniDB anime {AnimeID}: no Syoboi title ID.", anime.ID);
+            _logger.LogDebug("Skipping refresh for AniDB anime {AnimeID}: no Syoboi title ID.", anime.ID.ID);
             return false;
         }
 
         var (fromUtc, toUtc) = GetLookupWindow(anime, _timeProvider.GetUtcNow().UtcDateTime);
-        _logger.LogDebug("Refreshing AniDB anime {AnimeID} from Syoboi title {TitleID}, covering {From:u} — {To:u}.", anime.ID, titleId, fromUtc, toUtc);
+        _logger.LogDebug("Refreshing AniDB anime {AnimeID} from Syoboi title {TitleID}, covering {From:u} — {To:u}.", anime.ID.ID, titleId, fromUtc, toUtc);
 
         var lookup = await _apiClient.ProgLookupAsync([titleId], fromUtc, toUtc, cancellationToken).ConfigureAwait(false);
         return ApplyLookupResult(anime, titleId, lookup, fromUtc, toUtc);
@@ -157,8 +157,8 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         var config = _configurationProvider.Load();
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var candidates = FindCandidates(config, now)
-            .Where(candidate => candidate.Anime.ID > after)
-            .OrderBy(candidate => candidate.Anime.ID)
+            .Where(candidate => candidate.AnimeId > after)
+            .OrderBy(candidate => candidate.AnimeId)
             .ToList();
         if (candidates.Count is 0)
         {
@@ -193,14 +193,14 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
                 return ResumeAfter(after, swept);
             }
 
-            foreach (var (anime, titleId) in batch)
+            foreach (var (anime, _, titleId) in batch)
             {
                 if (ApplyLookupResult(anime, titleId, lookup, fromUtc, toUtc))
                     written++;
             }
 
             swept += batch.Length;
-            after = batch[^1].Anime.ID;
+            after = batch[^1].AnimeId;
         }
 
         _logger.LogDebug(
@@ -255,15 +255,15 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
     /// </summary>
     /// <param name="config">The configuration to filter by.</param>
     /// <param name="now">The current time, in UTC.</param>
-    /// <returns>The anime to sweep, each with its Syoboi title ID.</returns>
-    private IEnumerable<(IAnidbAnime Anime, int TitleId)> FindCandidates(Configuration config, DateTime now)
+    /// <returns>The anime to sweep, each with its AniDB anime ID and its Syoboi title ID.</returns>
+    private IEnumerable<(IAnidbAnime Anime, int AnimeId, int TitleId)> FindCandidates(Configuration config, DateTime now)
     {
         var upcomingCutoff = now.AddDays(config.UpcomingWindowDays);
         var endedCutoff = now.AddDays(-config.RecentlyEndedWindowDays);
 
-        foreach (var series in _metadataService.GetAllSeriesForProvider(IMetadataService.ProviderName.AniDB))
+        foreach (var series in _metadataService.GetAllSeriesForSource(MetadataSource.AniDB))
         {
-            if (series is not IAnidbAnime anime)
+            if (series is not IAnidbAnime anime || !anime.ID.TryGetNumericID<int>(out var animeId))
                 continue;
 
             if (!SyoboiTitleIdResolver.TryGetTitleId(anime.Resources, out var titleId))
@@ -272,7 +272,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
             if (config.ActiveOnly && !IsRelevant(anime, upcomingCutoff, endedCutoff))
                 continue;
 
-            yield return (anime, titleId);
+            yield return (anime, animeId, titleId);
         }
     }
 
@@ -328,11 +328,11 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         var episodesByNumber = anime.Episodes
             .Where(episode => episode.Type == EpisodeType.Episode)
             .GroupBy(episode => episode.EpisodeNumber)
-            .ToDictionary(group => group.Key, group => group.First().ID);
-        var episodesById = anime.Episodes.ToDictionary(episode => episode.ID);
+            .ToDictionary(group => group.Key, group => group.First().ID.GetNumericID<int>());
+        var episodesById = anime.Episodes.ToDictionary(episode => episode.ID.GetNumericID<int>());
         if (episodesByNumber.Count is 0)
         {
-            _logger.LogDebug("Skipping AniDB anime {AnimeID} (Syoboi title {TitleID}): it has no normal episodes to pin an airing to.", anime.ID, titleId);
+            _logger.LogDebug("Skipping AniDB anime {AnimeID} (Syoboi title {TitleID}): it has no normal episodes to pin an airing to.", anime.ID.ID, titleId);
             return false;
         }
 
@@ -359,7 +359,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         }
 
         if (!wroteAny)
-            _logger.LogDebug("Wrote no schedule for AniDB anime {AnimeID} (Syoboi title {TitleID}): none of its {Count} channel(s) had a slot that mapped onto a known episode.", anime.ID, titleId, bundles.Count);
+            _logger.LogDebug("Wrote no schedule for AniDB anime {AnimeID} (Syoboi title {TitleID}): none of its {Count} channel(s) had a slot that mapped onto a known episode.", anime.ID.ID, titleId, bundles.Count);
 
         return wroteAny;
     }
@@ -378,7 +378,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         var slots = lookup.Programs.Where(entry => entry.TID == titleId).ToList();
         if (slots.Count is 0)
         {
-            _logger.LogDebug("Syoboi title {TitleID} (AniDB anime {AnimeID}) has no broadcast slots in the requested window.", titleId, anime.ID);
+            _logger.LogDebug("Syoboi title {TitleID} (AniDB anime {AnimeID}) has no broadcast slots in the requested window.", titleId, anime.ID.ID);
             return;
         }
 
@@ -387,7 +387,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         var unnumbered = slots.Count(entry => !entry.Deleted && !entry.IsRerun && entry.Count is null);
         _logger.LogDebug(
             "None of the {Count} slot(s) Syoboi has for title {TitleID} (AniDB anime {AnimeID}) could be used: {Deleted} retracted, {Reruns} rerun(s), {Unnumbered} without an episode number, and the rest on a channel that is unknown, radio{AllowList}.",
-            slots.Count, titleId, anime.ID, deleted, reruns, unnumbered, allowedGroups is { Count: > 0 } ? ", or outside the allowed channel groups" : string.Empty
+            slots.Count, titleId, anime.ID.ID, deleted, reruns, unnumbered, allowedGroups is { Count: > 0 } ? ", or outside the allowed channel groups" : string.Empty
         );
     }
 
@@ -419,7 +419,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         {
             _logger.LogDebug(
                 "No slot on Syoboi channel {ChannelID} ({ChannelName}) maps onto a known episode of AniDB anime {AnimeID}; its {Count} slot(s) are numbered {Numbers}.",
-                bundle.ChID, bundle.ChannelName, anime.ID, bundle.Programs.Count, string.Join(", ", bundle.Programs.Select(entry => entry.Count?.ToString(CultureInfo.InvariantCulture) ?? "?").Distinct())
+                bundle.ChID, bundle.ChannelName, anime.ID.ID, bundle.Programs.Count, string.Join(", ", bundle.Programs.Select(entry => entry.Count?.ToString(CultureInfo.InvariantCulture) ?? "?").Distinct())
             );
             return false;
         }
@@ -437,14 +437,14 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
                 // name or alias. That's a naming collision worth knowing
                 // about, but not one that should stop this channel's
                 // schedule from being written.
-                _logger.LogWarning(ex, "Could not add alias(es) to channel {ChannelID} ({ChannelName}).", channel.ID, channel.Name);
+                _logger.LogWarning(ex, "Could not add alias(es) to channel {ChannelID} ({ChannelName}).", channel.ChannelID, channel.Name);
             }
         }
 
         var scheduleData = new AiringScheduleData
         {
             Series = anime,
-            ChannelID = channel.ID,
+            ChannelID = channel.ChannelID,
             Tracks = [new AiringTrackData(AiringKind.Original, "ja")],
             IsFinished = isFinished,
             TimeZone = timeZone,
@@ -466,7 +466,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
             .ToList();
         if (airings.Count is 0)
         {
-            _logger.LogDebug("Dropped every airing for AniDB anime {AnimeID} on Syoboi channel {ChannelID}: the episodes they map onto are no longer part of the anime.", anime.ID, bundle.ChID);
+            _logger.LogDebug("Dropped every airing for AniDB anime {AnimeID} on Syoboi channel {ChannelID}: the episodes they map onto are no longer part of the anime.", anime.ID.ID, bundle.ChID);
             return false;
         }
 
@@ -540,9 +540,8 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         if (series is IAnidbAnime anidbAnime)
             return anidbAnime;
 
-        if (series is IShokoSeries shokoSeries &&
-            _metadataService.GetSeriesByProviderID(shokoSeries.AnidbAnimeID, IMetadataService.ProviderName.AniDB) is IAnidbAnime resolved)
-            return resolved;
+        if (series is IShokoSeries shokoSeries)
+            return shokoSeries.AnidbAnime;
 
         return null;
     }
