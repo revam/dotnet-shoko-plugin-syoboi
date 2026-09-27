@@ -13,6 +13,8 @@ This plugin builds against an **in-progress** revision of `Shoko.Abstractions` (
 - **Regional channel names** — International streaming brands (Netflix, Amazon, …) are registered as Japanese regional channels (e.g. `Netflix (JP)`) instead of a bare, ambiguous name, so they line up with the same brand reported by another provider.
 - **Rerun and deletion handling** — Reruns (`Flag & 0x08`, 再) and retracted entries (`Deleted=1`) are dropped before anything is written. The final-episode flag (`0x04`, 終) is kept: it is still that episode's original broadcast.
 - **One-off broadcasts** — Syoboi leaves `Count` empty on a film or a TV special, since there is no episode number to state. Such a slot is pinned onto the anime's only episode when it has exactly one, and skipped otherwise.
+- **Double premieres and one-hour specials** — A slot airing several episodes back to back also comes with an empty `Count`, and names the episodes in its subtitle instead (`#1～#2`, `#1〜#2`, `#1-#2`, `#23～24`). Such a slot becomes one airing per episode, all at the slot's time and linked together as one slot.
+- **Advance airings** — A slot whose comment marks it as an advance airing (先行放送, 先行配信, 先に…) is recognised, but written like any other slot, since the airing contract has no way to mark one yet.
 - **Observable skips** — Every reason a refresh writes nothing — no Syoboi ID, no slots in the window, every slot retracted, a rerun, unnumbered or on a channel outside the allowed groups — is logged at Debug with the anime and title it applies to, so a legitimately empty result is never mistaken for a broken provider.
 - **Delays** — Syoboi records a pushed-back slot both in `StOffset` (seconds) and in `StTime` itself, so the delayed time is submitted as the airing's `AiredAt`, the run's usual slot as its `OriginalAiredAt`, and the airing is marked delayed.
 - **Rate limiting** — Every request goes through a shared limiter enforcing cal.syoboi.jp's one-request-per-second policy, with a custom `AppName (+Url)` User-Agent so the site doesn't throttle it harder.
@@ -36,6 +38,7 @@ Everything below was checked against the live service; the unit test fixtures ar
 - **`StTime`/`EdTime` are `yyyy-MM-dd HH:mm:ss` in JST with no offset**, and `StTime` already includes the delay recorded in `StOffset`.
 - **A refresh covers the anime's run**, its air date to its end date plus a month either side, capped at the two years up to now so a series running since 1999 doesn't ask for a quarter century at once; `ProgLookup` answers at most 5,000 rows regardless.
 - **`Count` is the episode number** and `Flag` is a bit field: `0x01` 注 (notice), `0x02` 新 (first episode), `0x04` 終 (final episode), `0x08` 再 (rerun).
+- **A slot of several episodes has no `Count`.** Its `SubTitle` holds the range instead, as `#1～#2`, and its `ProgComment` usually says 2話連続放送. `ProgComment` is also where an advance airing is marked, as 先行放送 or 先行配信.
 - **Rate limits.** One request per second for `db`, `rss`, `rss2` and `json`; clients without a custom User-Agent, or over 500 requests an hour or 10,000 a day, are slowed to one per ten seconds.
 
 ## Installation
@@ -85,7 +88,8 @@ How often the sweep runs is the server's setting rather than the plugin's: the p
 | `Http.SyoboiResponseParser` | Converts the XML wire format into typed records, honouring the `Result/Code` envelope (404 is "no data", anything else non-200 is a failure). |
 | `Mapping.SyoboiTitleIdResolver` | Recovers an anime's Syoboi title ID from its resources. |
 | `Mapping.SyoboiTimeConverter` | Converts Syoboi's JST, no-zone timestamps to UTC, and UTC windows back into a `Range` parameter. |
-| `Mapping.SyoboiProgramFilter` | Decides which broadcast entries are worth keeping (not a rerun, not deleted, and numbered unless the anime has a single episode). |
+| `Mapping.SyoboiProgramFilter` | Decides which broadcast entries are worth keeping (not a rerun, not deleted, and numbered or naming an episode range unless the anime has a single episode). |
+| `Mapping.SyoboiProgramText` | Reads the episode range out of a slot's subtitle, and an advance airing out of its comment. |
 | `Mapping.SyoboiChannelGroupClassifier` | Classifies a channel group as television, streaming, or radio (dropped). |
 | `Mapping.SyoboiChannelNaming` | Resolves the display name to register a channel under, regionalising a handful of international streaming brands. |
 | `Mapping.SyoboiScheduleMapper` | Pure grouping/mapping logic turning a lookup result into per-channel bundles and per-episode drafts, free of any `IAiringScheduleService` or AniDB entity dependency so it's cheap to unit test. |
@@ -95,6 +99,7 @@ How often the sweep runs is the server's setting rather than the plugin's: the p
 
 - **The airing schedule contract is still in progress.** `Shoko.Abstractions.Metadata.Airing` and its server-side implementation are being built alongside this plugin, so the contract can still change under it. Only the pure parsing, mapping and rate-limiting logic is unit tested here; the write path is exercised by running the plugin against a server.
 - **Channel group classification is a heuristic.** `SyoboiChannelGroupClassifier` matches on markers in the group name (`ラジオ` → dropped, `インターネット`/`配信`/`Abema`/`ニコニコ` → streaming, everything else → television) rather than on the 28 known `ChGID` values, so a group Syoboi adds later still classifies sensibly. The marker list is tested against the real group names.
+- **Advance airings are not marked.** The airing contract has no way to say an airing is an advance one rather than part of the regular run, so the plugin recognises one but writes it like any other slot.
 - **No typed Syoboi title ID.** `IAnidbAnime` doesn't expose `SyoboiID` directly; `SyoboiTitleIdResolver` parses it back out of `Resources`. A typed field on the abstraction, mentioned as a possible follow-up in the airing schedule plan, would remove this entirely.
 
 ## Building from Source

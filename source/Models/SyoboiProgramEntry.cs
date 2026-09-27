@@ -1,4 +1,5 @@
 using System;
+using Shoko.Plugin.Syoboi.Mapping;
 
 namespace Shoko.Plugin.Syoboi.Models;
 
@@ -23,10 +24,18 @@ namespace Shoko.Plugin.Syoboi.Models;
 /// </param>
 /// <param name="Count">
 /// The episode number this slot is for, or <c>null</c> when Syoboi doesn't
-/// state one (e.g. a marathon block).
+/// state one: a film, a special, or several episodes back to back, which
+/// <paramref name="SubTitle"/> then names.
 /// </param>
 /// <param name="Flag">Bit flags; see <see cref="SyoboiProgramFlags"/>.</param>
 /// <param name="Deleted">Whether Syoboi has retracted this entry.</param>
+/// <param name="SubTitle">
+/// Optional. The slot's subtitle, which holds the episode range
+/// (<c>#1～#2</c>) of a slot airing several episodes at once.
+/// </param>
+/// <param name="Comment">
+/// Optional. The slot's <c>ProgComment</c>, which marks an advance airing.
+/// </param>
 public sealed record SyoboiProgramEntry(
     string PID,
     int TID,
@@ -36,7 +45,9 @@ public sealed record SyoboiProgramEntry(
     int StOffset,
     int? Count,
     int Flag,
-    bool Deleted
+    bool Deleted,
+    string? SubTitle = null,
+    string? Comment = null
 )
 {
     /// <summary>
@@ -57,4 +68,18 @@ public sealed record SyoboiProgramEntry(
     /// Whether Syoboi marks this slot as a rerun.
     /// </summary>
     public bool IsRerun => (Flag & (int)SyoboiProgramFlags.Rerun) is not 0;
+
+    /// <summary>
+    /// The episodes a slot with no <see cref="Count"/> covers, read from its
+    /// <see cref="SubTitle"/>, or <c>null</c> when it has a count or names no
+    /// range.
+    /// </summary>
+    public (int First, int Last)? EpisodeRange
+        => Count is null && SyoboiProgramText.TryParseEpisodeRange(SubTitle, out var first, out var last) ? (first, last) : null;
+
+    /// <summary>
+    /// Whether the comment marks the slot as an advance airing (先行放送,
+    /// 先行配信, …) rather than a slot of the regular run.
+    /// </summary>
+    public bool IsAdvance => SyoboiProgramText.IsAdvanceAiring(Comment);
 }

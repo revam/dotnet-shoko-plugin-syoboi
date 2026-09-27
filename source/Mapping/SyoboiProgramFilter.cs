@@ -9,8 +9,8 @@ public static class SyoboiProgramFilter
 {
     /// <summary>
     /// Whether the entry should be dropped: it was retracted
-    /// (<c>Deleted=1</c>), carries no episode number (a marathon block, or
-    /// similar), or is flagged as a rerun.
+    /// (<c>Deleted=1</c>), carries neither an episode number nor an episode
+    /// range in its subtitle, or is flagged as a rerun.
     /// </summary>
     /// <remarks>
     /// The 終 (final episode) flag Syoboi sets on the last slot of a run is
@@ -30,7 +30,7 @@ public static class SyoboiProgramFilter
         if (entry.Deleted)
             return true;
 
-        if (entry.Count is not > 0 && !(allowMissingEpisodeNumber && entry.Count is null))
+        if (entry.Count is not > 0 && entry.EpisodeRange is null && !(allowMissingEpisodeNumber && entry.Count is null))
             return true;
 
         if (entry.IsRerun)

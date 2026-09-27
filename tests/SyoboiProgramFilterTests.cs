@@ -6,7 +6,7 @@ namespace Shoko.Plugin.Syoboi.Tests;
 
 public class SyoboiProgramFilterTests
 {
-    private static SyoboiProgramEntry MakeEntry(int? count = 1, int flag = 0, bool deleted = false)
+    private static SyoboiProgramEntry MakeEntry(int? count = 1, int flag = 0, bool deleted = false, string? subTitle = null)
         => new(
             PID: "538990",
             TID: 5877,
@@ -16,7 +16,8 @@ public class SyoboiProgramFilterTests
             StOffset: 0,
             Count: count,
             Flag: flag,
-            Deleted: deleted
+            Deleted: deleted,
+            SubTitle: subTitle
         );
 
     [Fact]
@@ -35,6 +36,24 @@ public class SyoboiProgramFilterTests
     public void An_entry_with_no_episode_number_is_skipped()
     {
         Assert.True(SyoboiProgramFilter.ShouldSkip(MakeEntry(count: null)));
+    }
+
+    [Fact]
+    public void An_entry_naming_an_episode_range_in_its_subtitle_is_kept()
+    {
+        Assert.False(SyoboiProgramFilter.ShouldSkip(MakeEntry(count: null, subTitle: "#1～#2")));
+    }
+
+    [Fact]
+    public void An_entry_whose_subtitle_is_not_a_range_is_skipped()
+    {
+        Assert.True(SyoboiProgramFilter.ShouldSkip(MakeEntry(count: null, subTitle: "#14.5 Debriefing")));
+    }
+
+    [Fact]
+    public void A_rerun_of_an_episode_range_is_skipped()
+    {
+        Assert.True(SyoboiProgramFilter.ShouldSkip(MakeEntry(count: null, flag: (int)SyoboiProgramFlags.Rerun, subTitle: "#1～#12")));
     }
 
     [Fact]

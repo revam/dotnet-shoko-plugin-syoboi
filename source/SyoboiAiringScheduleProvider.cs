@@ -384,7 +384,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
 
         var deleted = slots.Count(entry => entry.Deleted);
         var reruns = slots.Count(entry => !entry.Deleted && entry.IsRerun);
-        var unnumbered = slots.Count(entry => !entry.Deleted && !entry.IsRerun && entry.Count is null);
+        var unnumbered = slots.Count(entry => !entry.Deleted && !entry.IsRerun && entry.Count is null && entry.EpisodeRange is null);
         _logger.LogDebug(
             "None of the {Count} slot(s) Syoboi has for title {TitleID} (AniDB anime {AnimeID}) could be used: {Deleted} retracted, {Reruns} rerun(s), {Unnumbered} without an episode number, and the rest on a channel that is unknown, radio{AllowList}.",
             slots.Count, titleId, anime.ID.ID, deleted, reruns, unnumbered, allowedGroups is { Count: > 0 } ? ", or outside the allowed channel groups" : string.Empty
@@ -419,7 +419,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         {
             _logger.LogDebug(
                 "No slot on Syoboi channel {ChannelID} ({ChannelName}) maps onto a known episode of AniDB anime {AnimeID}; its {Count} slot(s) are numbered {Numbers}.",
-                bundle.ChID, bundle.ChannelName, anime.ID.ID, bundle.Programs.Count, string.Join(", ", bundle.Programs.Select(entry => entry.Count?.ToString(CultureInfo.InvariantCulture) ?? "?").Distinct())
+                bundle.ChID, bundle.ChannelName, anime.ID.ID, bundle.Programs.Count, string.Join(", ", bundle.Programs.Select(DescribeEpisodes).Distinct())
             );
             return false;
         }
@@ -452,6 +452,11 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
             Url = SyoboiConstants.GetTitleUrl(bundle.TitleID),
         };
         var schedule = _airingScheduleService.AddOrUpdateSchedule(this, scheduleData);
+
+        // The airing contract has no way to mark an advance airing, so one is
+        // written like any other slot, and only said here.
+        if (drafts.Count(draft => draft.IsAdvance) is > 0 and var advanceCount)
+            _logger.LogDebug("Writing {Count} advance airing(s) for AniDB anime {AnimeID} on Syoboi channel {ChannelID} as ordinary airings.", advanceCount, anime.ID.ID, bundle.ChID);
 
         var airings = drafts
             .Where(draft => episodesById.ContainsKey(draft.AnidbEpisodeID))
@@ -497,6 +502,16 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
 
         return true;
     }
+
+    /// <summary>
+    /// Describes the episodes a slot is for, for the logs.
+    /// </summary>
+    /// <param name="entry">The slot.</param>
+    /// <returns>Its episode number, its episode range, or <c>?</c>.</returns>
+    private static string DescribeEpisodes(SyoboiProgramEntry entry)
+        => entry.Count is { } count ? count.ToString(CultureInfo.InvariantCulture)
+            : entry.EpisodeRange is (var first, var last) ? string.Create(CultureInfo.InvariantCulture, $"{first}-{last}")
+            : "?";
 
     /// <summary>
     /// The airings already on the schedule, inside the window just looked up,

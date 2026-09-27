@@ -226,7 +226,10 @@ public static class SyoboiResponseParser
         var startedAt = SyoboiTimeConverter.ToUtc((string?)element.Element("StTime"));
         var endedAt = SyoboiTimeConverter.ToUtc((string?)element.Element("EdTime"));
 
-        return new SyoboiProgramEntry(pid, titleId, channelId, startedAt, endedAt, offset, count, flag, deleted);
+        var subTitle = Trimmed((string?)element.Element("SubTitle"));
+        var comment = Trimmed((string?)element.Element("ProgComment"));
+
+        return new SyoboiProgramEntry(pid, titleId, channelId, startedAt, endedAt, offset, count, flag, deleted, subTitle, comment);
     }
 
     private static SyoboiChannel? TryMapChannel(XElement element, ILogger? logger)

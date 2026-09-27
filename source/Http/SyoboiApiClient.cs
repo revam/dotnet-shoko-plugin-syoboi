@@ -46,7 +46,7 @@ public sealed class SyoboiApiClient
     /// </summary>
     public const int MaxTitleIdsPerRequest = 100;
 
-    private const string ProgramFields = "PID,TID,ChID,StTime,StOffset,EdTime,Count,Flag,Deleted";
+    private const string ProgramFields = "PID,TID,ChID,StTime,StOffset,EdTime,Count,SubTitle,ProgComment,Flag,Deleted";
 
     private const string ChannelFields = "ChID,ChName,ChiEPGName,ChGID";
 

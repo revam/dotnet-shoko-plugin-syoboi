@@ -31,4 +31,12 @@
   <ItemGroup>
     <ProjectReference Include="..\source\Shoko.Plugin.Syoboi.csproj" />
   </ItemGroup>
+
+  <!--
+    Fixtures are verbatim captures of real cal.syoboi.jp responses: the site's
+    channel directory and a few titles' ProgLookup answers.
+  -->
+  <ItemGroup>
+    <Content Include="Fixtures/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
