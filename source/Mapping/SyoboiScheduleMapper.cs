@@ -40,9 +40,8 @@ public sealed record SyoboiChannelBundle(
 /// from it; otherwise <c>null</c>.
 /// </param>
 /// <param name="IsDelayed">Whether this slot was pushed back from the run's usual time.</param>
-/// <param name="IsAdvance">
-/// Whether the slot is an advance airing rather than one of the regular run.
-/// The airing contract has no way to say so, so it is only logged.
+/// <param name="Kind">
+/// Whether the slot is one of the regular run, an advance airing or a rerun.
 /// </param>
 public sealed record SyoboiEpisodeAiringDraft(
     string PID,
@@ -51,12 +50,14 @@ public sealed record SyoboiEpisodeAiringDraft(
     DateTime? AiredAtUtc,
     DateTime? OriginalAiredAtUtc = null,
     bool IsDelayed = false,
-    bool IsAdvance = false
+    EpisodeAiringKind Kind = EpisodeAiringKind.Normal
 )
 {
     /// <summary>
     /// The stable per-schedule key for this airing, as the plan specifies:
-    /// <c>{PID}:{Count}</c>.
+    /// <c>{PID}:{Count}</c>. Every slot has a PID of its own, so an advance
+    /// airing or a rerun never shares a key with the episode's regular
+    /// showing on the same channel.
     /// </summary>
     public string Key => $"{PID}:{EpisodeNumber}";
 }
@@ -153,7 +154,7 @@ public static class SyoboiScheduleMapper
                 if (!anidbEpisodeIdsByNumber.TryGetValue(episodeNumber, out var episodeId))
                     continue;
 
-                drafts.Add(new SyoboiEpisodeAiringDraft(entry.PID, episodeNumber, episodeId, entry.StartedAt, entry.OriginalStartedAt, entry.IsDelayed, entry.IsAdvance));
+                drafts.Add(new SyoboiEpisodeAiringDraft(entry.PID, episodeNumber, episodeId, entry.StartedAt, entry.OriginalStartedAt, entry.IsDelayed, entry.Kind));
             }
         }
 

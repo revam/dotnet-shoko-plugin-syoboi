@@ -1,4 +1,5 @@
 using System;
+using Shoko.Abstractions.Metadata.Airing;
 using Shoko.Plugin.Syoboi.Mapping;
 
 namespace Shoko.Plugin.Syoboi.Models;
@@ -82,4 +83,12 @@ public sealed record SyoboiProgramEntry(
     /// 先行配信, …) rather than a slot of the regular run.
     /// </summary>
     public bool IsAdvance => SyoboiProgramText.IsAdvanceAiring(Comment);
+
+    /// <summary>
+    /// What kind of showing the slot is: a rerun when Syoboi flags it 再,
+    /// otherwise an advance airing when its comment says so, otherwise a slot
+    /// of the regular run.
+    /// </summary>
+    public EpisodeAiringKind Kind
+        => IsRerun ? EpisodeAiringKind.Rerun : IsAdvance ? EpisodeAiringKind.Advance : EpisodeAiringKind.Normal;
 }

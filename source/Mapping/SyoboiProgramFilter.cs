@@ -9,13 +9,14 @@ public static class SyoboiProgramFilter
 {
     /// <summary>
     /// Whether the entry should be dropped: it was retracted
-    /// (<c>Deleted=1</c>), carries neither an episode number nor an episode
-    /// range in its subtitle, or is flagged as a rerun.
+    /// (<c>Deleted=1</c>), or carries neither an episode number nor an episode
+    /// range in its subtitle.
     /// </summary>
     /// <remarks>
-    /// The 終 (final episode) flag Syoboi sets on the last slot of a run is
-    /// deliberately not a reason to skip: it is still that episode's original
-    /// broadcast.
+    /// A rerun is kept, and written as one (see
+    /// <see cref="SyoboiProgramEntry.Kind"/>). The 終 (final episode) flag
+    /// Syoboi sets on the last slot of a run is not a reason to skip either: it
+    /// is still that episode's original broadcast.
     /// </remarks>
     /// <param name="entry">The entry to check.</param>
     /// <param name="allowMissingEpisodeNumber">
@@ -31,9 +32,6 @@ public static class SyoboiProgramFilter
             return true;
 
         if (entry.Count is not > 0 && entry.EpisodeRange is null && !(allowMissingEpisodeNumber && entry.Count is null))
-            return true;
-
-        if (entry.IsRerun)
             return true;
 
         return false;

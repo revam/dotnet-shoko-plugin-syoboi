@@ -59,14 +59,21 @@ public class SyoboiScheduleMapperTests
     }
 
     [Fact]
-    public void Drops_reruns_and_deleted_entries_before_grouping()
+    public void Drops_deleted_entries_before_grouping()
     {
-        var lookup = Lookup(
-            [Program("1", chId: 19, flag: (int)SyoboiProgramFlags.Rerun), Program("2", chId: 19, deleted: true)],
-            _tokyoMx
-        );
+        var lookup = Lookup([Program("1", chId: 19, deleted: true)], _tokyoMx);
 
         Assert.Empty(SyoboiScheduleMapper.BuildChannelBundles(TitleId, lookup));
+    }
+
+    [Fact]
+    public void Keeps_a_rerun_beside_the_regular_showing()
+    {
+        var lookup = Lookup([Program("1", chId: 19), Program("2", chId: 19, flag: (int)SyoboiProgramFlags.Rerun)], _tokyoMx);
+
+        var bundle = Assert.Single(SyoboiScheduleMapper.BuildChannelBundles(TitleId, lookup));
+
+        Assert.Equal(["1", "2"], bundle.Programs.Select(program => program.PID));
     }
 
     [Fact]
@@ -149,6 +156,21 @@ public class SyoboiScheduleMapperTests
         Assert.Equal(_startedAt, draft.AiredAtUtc);
         Assert.Equal(_startedAt.AddSeconds(-600), draft.OriginalAiredAtUtc);
         Assert.True(draft.IsDelayed);
+    }
+
+    [Theory]
+    [InlineData(0, null, EpisodeAiringKind.Normal)]
+    [InlineData(0, "先行放送", EpisodeAiringKind.Advance)]
+    [InlineData((int)SyoboiProgramFlags.Rerun, null, EpisodeAiringKind.Rerun)]
+    [InlineData((int)(SyoboiProgramFlags.Rerun | SyoboiProgramFlags.Notice), "先行放送", EpisodeAiringKind.Rerun)]
+    public void BuildEpisodeDrafts_marks_what_kind_of_showing_a_slot_is(int flag, string? comment, EpisodeAiringKind kind)
+    {
+        var programs = new[] { Program("538991", chId: 19, count: 1, flag: flag) with { Comment = comment } };
+
+        var draft = Assert.Single(SyoboiScheduleMapper.BuildEpisodeDrafts(programs, new Dictionary<int, int> { [1] = 555 }));
+
+        Assert.Equal(kind, draft.Kind);
+        Assert.Equal("538991:1", draft.Key);
     }
 
     [Fact]

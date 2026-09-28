@@ -51,9 +51,9 @@ public class SyoboiProgramFilterTests
     }
 
     [Fact]
-    public void A_rerun_of_an_episode_range_is_skipped()
+    public void A_rerun_of_an_episode_range_is_kept()
     {
-        Assert.True(SyoboiProgramFilter.ShouldSkip(MakeEntry(count: null, flag: (int)SyoboiProgramFlags.Rerun, subTitle: "#1～#12")));
+        Assert.False(SyoboiProgramFilter.ShouldSkip(MakeEntry(count: null, flag: (int)SyoboiProgramFlags.Rerun, subTitle: "#1～#12")));
     }
 
     [Fact]
@@ -64,15 +64,15 @@ public class SyoboiProgramFilterTests
     }
 
     [Fact]
-    public void A_rerun_entry_is_skipped()
+    public void A_rerun_entry_is_kept()
     {
-        Assert.True(SyoboiProgramFilter.ShouldSkip(MakeEntry(flag: (int)SyoboiProgramFlags.Rerun)));
+        Assert.False(SyoboiProgramFilter.ShouldSkip(MakeEntry(flag: (int)SyoboiProgramFlags.Rerun)));
     }
 
     [Fact]
-    public void A_rerun_flag_combined_with_other_bits_is_still_skipped()
+    public void A_rerun_flag_combined_with_other_bits_is_still_kept()
     {
-        Assert.True(SyoboiProgramFilter.ShouldSkip(MakeEntry(flag: (int)(SyoboiProgramFlags.Rerun | SyoboiProgramFlags.Notice))));
+        Assert.False(SyoboiProgramFilter.ShouldSkip(MakeEntry(flag: (int)(SyoboiProgramFlags.Rerun | SyoboiProgramFlags.Notice))));
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using Shoko.Abstractions.Metadata.Airing;
 using Shoko.Plugin.Syoboi.Http;
 using Shoko.Plugin.Syoboi.Mapping;
 using Shoko.Plugin.Syoboi.Models;
@@ -81,14 +82,36 @@ public class SyoboiCapturedLookupTests
     }
 
     [Fact]
-    public void A_rerun_marathon_airs_nothing()
+    public void A_rerun_marathon_airs_every_episode_as_a_rerun()
     {
         // Every #1～#12 block for this title is flagged 再.
         var marathons = Lookup(5534).Programs.Where(entry => entry.EpisodeRange is (1, 12)).ToList();
 
         Assert.NotEmpty(marathons);
         Assert.All(marathons, entry => Assert.True(entry.IsRerun));
-        Assert.DoesNotContain(Drafts(5534), draft => marathons.Any(entry => entry.PID == draft.PID));
+
+        var drafts = Drafts(5534);
+        foreach (var marathon in marathons)
+        {
+            var reruns = drafts.Where(draft => draft.PID == marathon.PID).ToList();
+            Assert.Equal(Enumerable.Range(1, 12), reruns.Select(draft => draft.EpisodeNumber));
+            Assert.All(reruns, draft => Assert.Equal(EpisodeAiringKind.Rerun, draft.Kind));
+        }
+    }
+
+    [Fact]
+    public void A_rerun_keys_apart_from_the_regular_showing()
+    {
+        var drafts = Drafts(2092);
+
+        // テレビ東京, episode 3 on 2011-04-18 and its 再 in August.
+        var regular = Assert.Single(drafts, draft => draft.PID == "187595");
+        var rerun = Assert.Single(drafts, draft => draft.PID == "196765");
+
+        Assert.Equal(EpisodeAiringKind.Normal, regular.Kind);
+        Assert.Equal(EpisodeAiringKind.Rerun, rerun.Kind);
+        Assert.Equal(regular.AnidbEpisodeID, rerun.AnidbEpisodeID);
+        Assert.NotEqual(regular.Key, rerun.Key);
     }
 
     #endregion
@@ -102,10 +125,14 @@ public class SyoboiCapturedLookupTests
 
         // サンテレビジョン, 先行放送 of episode 3.
         var advance = Assert.Single(drafts, draft => draft.PID == "182058");
-        Assert.True(advance.IsAdvance);
+        Assert.Equal(EpisodeAiringKind.Advance, advance.Kind);
         Assert.Equal(3, advance.EpisodeNumber);
 
-        Assert.Contains(drafts, draft => !draft.IsAdvance);
+        // Its regular showing on the same channel, three months on.
+        var regular = Assert.Single(drafts, draft => draft.PID == "187569");
+        Assert.Equal(EpisodeAiringKind.Normal, regular.Kind);
+        Assert.Equal(advance.AnidbEpisodeID, regular.AnidbEpisodeID);
+        Assert.NotEqual(advance.Key, regular.Key);
     }
 
     #endregion
