@@ -16,6 +16,22 @@
   ],
   "releases": [
     {
+      "version": "1.1.0",
+      "tag": "v1.1.0",
+      "released_at": "2026-09-30T16:38:49.2815801Z",
+      "channel": "Stable",
+      "release_notes": "Reruns are kept and written as \u0060Rerun\u0060 airings instead of being dropped, and slots whose comment marks them as an advance airing (\u5148\u884C\u653E\u9001, \u5148\u884C\u914D\u4FE1) are written as \u0060Advance\u0060 airings. The server leaves both out of a schedule\u0027s cadence, delays and estimates, and each airing is keyed by its own slot so neither collides with the regular showing. Double premieres and one-hour specials, which Syoboi lists without an episode number and names by a range such as \u0060#1\uFF5E#2\u0060 in the subtitle, now become one airing per episode at the slot\u0027s time instead of being skipped. Rebuilt against the abstractions \u00606.0.0-alpha.95\u0060 release.\n\nRequires Shoko Server with abstractions \u00606.0.0-alpha.95\u0060.",
+      "dependencies": [],
+      "archives": [
+        {
+          "runtime": "any",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/revam/dotnet-shoko-plugin-syoboi/releases/download/v1.1.0/SyoboiCalendar-v1.1.0-any.zip",
+          "checksum": "sha256:0e2d205c6063fc29afc9c81120ad34b177d60e58727391de1829fa524f15f6c1"
+        }
+      ]
+    },
+    {
       "version": "1.0.0",
       "tag": "v1.0.0",
       "released_at": "2026-09-18T04:15:41.7241703Z",
