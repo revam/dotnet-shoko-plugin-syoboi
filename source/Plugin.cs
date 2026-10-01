@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.Config;
 using Shoko.Abstractions.Plugin;
@@ -45,6 +46,14 @@ public class Plugin : IPlugin, IPluginServiceRegistration
             // normalises them into something the header parser accepts.
             foreach (var value in SyoboiUserAgent.Build(config.UserAgentAppName, config.UserAgentUrl))
                 client.DefaultRequestHeaders.UserAgent.Add(value);
-        });
+        })
+            // The provider holds on to its client for the life of the server,
+            // so one handler is kept and its pooled connections recycled.
+            .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
+            .UseSocketsHttpHandler((handler, _) =>
+            {
+                handler.PooledConnectionLifetime = TimeSpan.FromMinutes(5);
+                handler.PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2);
+            });
     }
 }
