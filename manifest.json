@@ -16,6 +16,22 @@
   ],
   "releases": [
     {
+      "version": "1.1.1",
+      "tag": "v1.1.1",
+      "released_at": "2026-10-01T20:12:03.8499372Z",
+      "channel": "Stable",
+      "release_notes": "The Syoboi API client now keeps one HTTP handler for the life of the server, recycling its connections every few minutes instead. Before, the airing schedule provider held the typed client past the factory\u0027s handler lifetime, so the expired handler could never be disposed and the factory\u0027s cleanup kept reporting one remaining item.\n\nRequires Shoko Server with abstractions \u00606.0.0-alpha.95\u0060.",
+      "dependencies": [],
+      "archives": [
+        {
+          "runtime": "any",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/revam/dotnet-shoko-plugin-syoboi/releases/download/v1.1.1/SyoboiCalendar-v1.1.1-any.zip",
+          "checksum": "sha256:63ef98700bacc653aee50d54736ce3be6290e3a25fd2255317c563d2dfa5aa7c"
+        }
+      ]
+    },
+    {
       "version": "1.1.0",
       "tag": "v1.1.0",
       "released_at": "2026-09-30T16:38:49.2815801Z",
