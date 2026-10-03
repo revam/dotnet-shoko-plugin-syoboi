@@ -16,6 +16,22 @@
   ],
   "releases": [
     {
+      "version": "1.1.2",
+      "tag": "v1.1.2",
+      "released_at": "2026-10-03T16:54:36.4667468Z",
+      "channel": "Stable",
+      "release_notes": "Rebuilt against the abstractions \u00606.0.0-alpha.98\u0060 release. Airing schedules from Syoboi Calendar are fetched and written as before. The plugin also has its own icon and thumbnail now.\n\nRequires Shoko Server with abstractions \u00606.0.0-alpha.98\u0060.",
+      "dependencies": [],
+      "archives": [
+        {
+          "runtime": "any",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/revam/dotnet-shoko-plugin-syoboi/releases/download/v1.1.2/SyoboiCalendar-v1.1.2-any.zip",
+          "checksum": "sha256:936d86e3b4fa25ca040af7d13c29eb2fd52b4cfd9e7f170276355c81747e247d"
+        }
+      ]
+    },
+    {
       "version": "1.1.1",
       "tag": "v1.1.1",
       "released_at": "2026-10-01T20:12:03.8499372Z",
