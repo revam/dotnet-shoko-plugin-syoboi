@@ -13,6 +13,16 @@ namespace Shoko.Plugin.Syoboi;
 /// </summary>
 public class Plugin : IPlugin, IPluginServiceRegistration
 {
+    /// <summary>
+    /// The embedded resource of the plugin's thumbnail.
+    /// </summary>
+    internal const string ThumbnailResourceName = "Shoko.Plugin.Syoboi.Assets.thumbnail.svg";
+
+    /// <summary>
+    /// The embedded resource of the plugin's icon.
+    /// </summary>
+    internal const string IconResourceName = "Shoko.Plugin.Syoboi.Assets.icon.svg";
+
     /// <inheritdoc/>
     public Guid ID { get; private init; } = new("2f4b7a3e-9c1d-4f6a-8b2e-5d3c7a1f9e0b");
 
@@ -24,6 +34,12 @@ public class Plugin : IPlugin, IPluginServiceRegistration
         Provides Japanese TV and streaming broadcast schedules from cal.syoboi.jp
         (Syoboi Calendar), keyed to AniDB anime through their Syoboi title ID.
     """;
+
+    /// <inheritdoc/>
+    public string? EmbeddedThumbnailResourceName => ThumbnailResourceName;
+
+    /// <inheritdoc/>
+    public string? EmbeddedIconResourceName => IconResourceName;
 
     /// <inheritdoc/>
     public static void RegisterServices(IServiceCollection serviceCollection, IApplicationPaths applicationPaths)
