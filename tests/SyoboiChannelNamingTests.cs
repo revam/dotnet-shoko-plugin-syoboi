@@ -6,40 +6,37 @@ namespace Shoko.Plugin.Syoboi.Tests;
 
 public class SyoboiChannelNamingTests
 {
-    [Fact]
-    public void An_international_streaming_brand_is_registered_as_a_JP_regional_channel()
+    [Theory]
+    [InlineData("Netflix")]
+    [InlineData("Amazon Prime Video")]
+    [InlineData("  Netflix  ")]
+    public void A_global_streaming_brand_is_registered_without_a_country(string channelName)
     {
-        var name = SyoboiChannelNaming.ResolveDisplayName("Netflix", AiringChannelType.Streaming);
-
-        Assert.Equal("Netflix (JP)", name);
+        Assert.Null(SyoboiChannelNaming.ResolveCountryCode(channelName, AiringChannelType.Streaming));
     }
 
-    [Fact]
-    public void An_international_brand_is_not_regionalised_when_classified_as_television()
+    [Theory]
+    [InlineData("ABEMA")]
+    [InlineData("dアニメストア")]
+    [InlineData("Hulu")]
+    public void A_streaming_service_only_available_in_japan_is_registered_in_japan(string channelName)
     {
-        // Defensive: Syoboi should never classify Netflix as TV, but if it
-        // somehow did, this must not silently rename an actual TV station.
-        var name = SyoboiChannelNaming.ResolveDisplayName("Netflix", AiringChannelType.Television);
-
-        Assert.Equal("Netflix", name);
+        Assert.Equal("JP", SyoboiChannelNaming.ResolveCountryCode(channelName, AiringChannelType.Streaming));
     }
 
     [Theory]
     [InlineData("TOKYO MX")]
-    [InlineData("ABEMA")]
-    [InlineData("dアニメストア")]
-    public void A_non_international_channel_keeps_its_own_name(string channelName)
+    [InlineData("Netflix")]
+    public void A_television_station_is_registered_in_japan(string channelName)
     {
-        var name = SyoboiChannelNaming.ResolveDisplayName(channelName, AiringChannelType.Streaming);
-
-        Assert.Equal(channelName, name);
+        // Syoboi should never classify Netflix as TV, but a station keeps its
+        // country whatever it is called.
+        Assert.Equal("JP", SyoboiChannelNaming.ResolveCountryCode(channelName, AiringChannelType.Television));
     }
 
     [Fact]
-    public void The_name_is_trimmed()
+    public void The_name_is_kept_as_syoboi_gives_it_but_trimmed()
     {
-        var name = SyoboiChannelNaming.ResolveDisplayName("  Netflix  ", AiringChannelType.Streaming);
-
-        Assert.Equal("Netflix (JP)", name);
+        Assert.Equal("Netflix", SyoboiChannelNaming.ResolveDisplayName("  Netflix  "));
     }
 }

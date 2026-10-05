@@ -45,7 +45,7 @@ public class SyoboiScheduleMapperTests
         var bundles = SyoboiScheduleMapper.BuildChannelBundles(TitleId, lookup);
 
         Assert.Equal(2, bundles.Count);
-        Assert.Contains(bundles, bundle => bundle.ChID == 19 && bundle.ChannelName == "TOKYO MX" && bundle.ChannelType == AiringChannelType.Television);
+        Assert.Contains(bundles, bundle => bundle.ChID == 19 && bundle.ChannelName == "TOKYO MX" && bundle.ChannelType == AiringChannelType.Television && bundle.ChannelCountryCode == "JP");
         Assert.Contains(bundles, bundle => bundle.ChID == 128 && bundle.ChannelName == "BS11イレブン");
         Assert.All(bundles, bundle => Assert.Equal(TitleId, bundle.TitleID));
     }
@@ -103,14 +103,15 @@ public class SyoboiScheduleMapperTests
     }
 
     [Fact]
-    public void An_international_streaming_brand_is_registered_as_a_regional_channel()
+    public void A_global_streaming_brand_is_registered_without_a_country()
     {
         var lookup = Lookup([Program("1", chId: 256)], _netflix);
 
         var bundle = Assert.Single(SyoboiScheduleMapper.BuildChannelBundles(TitleId, lookup));
 
-        Assert.Equal("Netflix (JP)", bundle.ChannelName);
+        Assert.Equal("Netflix", bundle.ChannelName);
         Assert.Equal(AiringChannelType.Streaming, bundle.ChannelType);
+        Assert.Null(bundle.ChannelCountryCode);
     }
 
     [Fact]

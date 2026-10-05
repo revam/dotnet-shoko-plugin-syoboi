@@ -423,7 +423,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
             return false;
         }
 
-        var channel = _airingScheduleService.FindOrRegisterChannel(bundle.ChannelName, bundle.ChannelType);
+        var channel = _airingScheduleService.FindOrRegisterChannel(bundle.ChannelName, bundle.ChannelType, bundle.ChannelCountryCode);
         if (bundle.ChannelAliases.Count > 0)
         {
             try

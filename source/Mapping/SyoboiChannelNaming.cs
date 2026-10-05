@@ -1,53 +1,65 @@
 using System;
 using System.Collections.Generic;
 using Shoko.Abstractions.Metadata.Airing;
-using Shoko.Abstractions.Metadata.Services;
 
 namespace Shoko.Plugin.Syoboi.Mapping;
 
 /// <summary>
-/// Resolves the display name to register a Syoboi channel under. Most
-/// channels are registered exactly as Syoboi names them; a handful of
-/// international streaming brands are registered as Japanese regional
-/// channels instead, so they share an ID with the same brand as reported by
-/// another provider rather than colliding under a bare, ambiguous name.
+/// Resolves the name and country to register a Syoboi channel under. Every
+/// channel keeps the name Syoboi gives it. Syoboi lists Japanese channels, so
+/// a TV station, and a streaming service only available in Japan, is
+/// registered in Japan, while a global streaming service is registered
+/// without a country, so it is the same channel whoever reports it.
 /// </summary>
 public static class SyoboiChannelNaming
 {
     /// <summary>
-    /// The country Syoboi's streaming channels are watched from.
+    /// The country Syoboi's channels are in.
     /// </summary>
     public const string RegionCountryCode = "JP";
 
-    // International brands Syoboi lists under their bare, worldwide name.
-    // Anything else (ABEMA, dアニメストア, and every TV station) is already
-    // unambiguous and is registered as Syoboi names it.
-    private static readonly HashSet<string> InternationalStreamingBrands = new(StringComparer.OrdinalIgnoreCase)
+    // Global brands Syoboi lists under their worldwide name. Hulu is not one
+    // of them: Syoboi's Hulu is Hulu Japan, a service of its own.
+    private static readonly HashSet<string> GlobalStreamingBrands = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Netflix",
         "Amazon",
         "Amazon Prime Video",
+        "Crunchyroll",
         "Disney+",
         "Disney Plus",
-        "Hulu",
+        "Netflix",
+        "YouTube",
     };
 
     /// <summary>
     /// Resolves the name to register a channel under.
     /// </summary>
     /// <param name="channelName">The channel's Syoboi <c>ChName</c>.</param>
-    /// <param name="channelType">The channel's classified type.</param>
     /// <returns>
     /// The name to pass to <c>IAiringScheduleService.FindOrRegisterChannel</c>.
     /// </returns>
-    public static string ResolveDisplayName(string channelName, AiringChannelType channelType)
+    public static string ResolveDisplayName(string channelName)
     {
         ArgumentNullException.ThrowIfNull(channelName);
 
-        var trimmed = channelName.Trim();
-        if (channelType == AiringChannelType.Streaming && InternationalStreamingBrands.Contains(trimmed))
-            return IAiringScheduleService.GetRegionalChannelName(trimmed, RegionCountryCode);
+        return channelName.Trim();
+    }
 
-        return trimmed;
+    /// <summary>
+    /// Resolves the country to register a channel under.
+    /// </summary>
+    /// <param name="channelName">The channel's Syoboi <c>ChName</c>.</param>
+    /// <param name="channelType">The channel's classified type.</param>
+    /// <returns>
+    /// <see cref="RegionCountryCode"/>, or <c>null</c> for a global streaming
+    /// service.
+    /// </returns>
+    public static string? ResolveCountryCode(string channelName, AiringChannelType channelType)
+    {
+        ArgumentNullException.ThrowIfNull(channelName);
+
+        return channelType == AiringChannelType.Streaming && GlobalStreamingBrands.Contains(channelName.Trim())
+            ? null
+            : RegionCountryCode;
     }
 }

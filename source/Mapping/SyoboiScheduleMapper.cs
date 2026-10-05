@@ -17,6 +17,7 @@ namespace Shoko.Plugin.Syoboi.Mapping;
 /// <param name="ChannelName">The name to register the channel under.</param>
 /// <param name="ChannelAliases">Extra names (e.g. the EPG name) to register as aliases.</param>
 /// <param name="ChannelType">The channel's classified type.</param>
+/// <param name="ChannelCountryCode">The country to register the channel under, or <c>null</c> for a global service.</param>
 /// <param name="Programs">The channel's surviving program entries for this title.</param>
 public sealed record SyoboiChannelBundle(
     int TitleID,
@@ -24,6 +25,7 @@ public sealed record SyoboiChannelBundle(
     string ChannelName,
     IReadOnlyList<string> ChannelAliases,
     AiringChannelType ChannelType,
+    string? ChannelCountryCode,
     IReadOnlyList<SyoboiProgramEntry> Programs
 );
 
@@ -113,12 +115,13 @@ public static class SyoboiScheduleMapper
             if (channelType is null)
                 continue; // Radio.
 
-            var displayName = SyoboiChannelNaming.ResolveDisplayName(channel.ChName, channelType.Value);
+            var displayName = SyoboiChannelNaming.ResolveDisplayName(channel.ChName);
+            var countryCode = SyoboiChannelNaming.ResolveCountryCode(channel.ChName, channelType.Value);
             IReadOnlyList<string> aliases = !string.IsNullOrWhiteSpace(channel.ChiEPGName) && channel.ChiEPGName != displayName
                 ? [channel.ChiEPGName]
                 : [];
 
-            bundles.Add(new SyoboiChannelBundle(titleId, channel.ChID, displayName, aliases, channelType.Value, [.. group]));
+            bundles.Add(new SyoboiChannelBundle(titleId, channel.ChID, displayName, aliases, channelType.Value, countryCode, [.. group]));
         }
 
         return bundles;
