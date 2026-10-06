@@ -17,9 +17,6 @@ public class SyoboiCapturedLookupTests
         SyoboiResponseParser.ParseChannelGroups(Fixture("chgrouplookup.xml")).Value
     ));
 
-    // Episode n is AniDB episode 100000 + n.
-    private static readonly IReadOnlyDictionary<int, int> _episodes = Enumerable.Range(1, 30).ToDictionary(number => number, number => 100_000 + number);
-
     private static string Fixture(string fileName)
         => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
 
@@ -27,7 +24,7 @@ public class SyoboiCapturedLookupTests
         => new(SyoboiResponseParser.ParsePrograms(Fixture($"proglookup-tid-{titleId}.xml")).Value, _directory.Value);
 
     private static IReadOnlyList<SyoboiEpisodeAiringDraft> Drafts(int titleId)
-        => [.. SyoboiScheduleMapper.BuildChannelBundles(titleId, Lookup(titleId)).SelectMany(bundle => SyoboiScheduleMapper.BuildEpisodeDrafts(bundle.Programs, _episodes))];
+        => [.. SyoboiScheduleMapper.BuildChannelBundles(titleId, Lookup(titleId)).SelectMany(bundle => SyoboiScheduleMapper.BuildEpisodeDrafts(bundle.Programs))];
 
     #region Episode ranges
 
@@ -52,7 +49,7 @@ public class SyoboiCapturedLookupTests
         var drafts = Drafts(5518).Where(draft => draft.PID == pid).ToList();
 
         Assert.Equal([1, 2], drafts.Select(draft => draft.EpisodeNumber));
-        Assert.Equal([100_001, 100_002], drafts.Select(draft => draft.AnidbEpisodeID));
+        Assert.Equal([1, 2], drafts.Select(draft => draft.SequenceNumber));
         Assert.Equal([$"{pid}:1", $"{pid}:2"], drafts.Select(draft => draft.Key));
         Assert.All(drafts, draft => Assert.Equal(entry.StartedAt, draft.AiredAtUtc));
     }
@@ -110,7 +107,7 @@ public class SyoboiCapturedLookupTests
 
         Assert.Equal(EpisodeAiringKind.Normal, regular.Kind);
         Assert.Equal(EpisodeAiringKind.Rerun, rerun.Kind);
-        Assert.Equal(regular.AnidbEpisodeID, rerun.AnidbEpisodeID);
+        Assert.Equal(regular.SequenceNumber, rerun.SequenceNumber);
         Assert.NotEqual(regular.Key, rerun.Key);
     }
 
@@ -131,7 +128,7 @@ public class SyoboiCapturedLookupTests
         // Its regular showing on the same channel, three months on.
         var regular = Assert.Single(drafts, draft => draft.PID == "187569");
         Assert.Equal(EpisodeAiringKind.Normal, regular.Kind);
-        Assert.Equal(advance.AnidbEpisodeID, regular.AnidbEpisodeID);
+        Assert.Equal(advance.SequenceNumber, regular.SequenceNumber);
         Assert.NotEqual(advance.Key, regular.Key);
     }
 

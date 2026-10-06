@@ -23,7 +23,7 @@ public static class SyoboiProgramFilter
     /// Whether an entry with no episode number is still usable. Syoboi leaves
     /// <c>Count</c> empty on a one-off broadcast — a film or a TV special —
     /// where there is no numbering to state, so it is usable when the anime
-    /// it maps onto has exactly one episode to pin it to.
+    /// it maps onto is a single episode, which is the slot's only place.
     /// </param>
     /// <returns><c>true</c> if the entry should be skipped.</returns>
     public static bool ShouldSkip(SyoboiProgramEntry entry, bool allowMissingEpisodeNumber = false)

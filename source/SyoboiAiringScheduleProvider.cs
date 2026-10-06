@@ -325,26 +325,31 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
             ? new HashSet<string>(config.AllowedChannelGroups, StringComparer.OrdinalIgnoreCase)
             : null;
 
-        var episodesByNumber = anime.Episodes
-            .Where(episode => episode.Type == EpisodeType.Episode)
-            .GroupBy(episode => episode.EpisodeNumber)
-            .ToDictionary(group => group.Key, group => group.First().ID.GetNumericID<int>());
-        var episodesById = anime.Episodes.ToDictionary(episode => episode.ID.GetNumericID<int>());
-        if (episodesByNumber.Count is 0)
-        {
-            _logger.LogDebug("Skipping AniDB anime {AnimeID} (Syoboi title {TitleID}): it has no normal episodes to pin an airing to.", anime.ID.ID, titleId);
-            return false;
-        }
+        // Airings are placed by Syoboi's own numbers, so AniDB doesn't have to
+        // list an episode yet for its slots to be stored.
+        var normalEpisodes = anime.Episodes.Where(episode => episode.Type == EpisodeType.Episode).ToList();
 
-        // A one-off broadcast — a film or a TV special — carries no episode
+        // A one-off broadcast, a film or a TV special, carries no episode
         // number, which is only usable when there is a single episode for it
         // to be.
-        var bundles = SyoboiScheduleMapper.BuildChannelBundles(titleId, lookup, allowedGroups, allowMissingEpisodeNumbers: episodesByNumber.Count is 1);
+        var isSingleEpisode = normalEpisodes.Select(episode => episode.EpisodeNumber).Distinct().Count() is 1
+            || (normalEpisodes.Count is 0 && anime.Type is AnimeType.Movie);
+        var bundles = SyoboiScheduleMapper.BuildChannelBundles(titleId, lookup, allowedGroups, allowMissingEpisodeNumbers: isSingleEpisode);
         if (bundles.Count is 0)
         {
             LogNoUsableSlots(anime, titleId, lookup, allowedGroups);
             return false;
         }
+
+        // Some titles keep counting across cours that AniDB splits into
+        // separate anime, so learn the offset from slots on AniDB's air dates.
+        var episodeNumbersByAirDate = normalEpisodes
+            .Where(episode => episode.AirDate.HasValue)
+            .GroupBy(episode => episode.AirDate!.Value)
+            .ToDictionary(group => group.Key, IReadOnlyList<int> (group) => [.. group.Select(episode => episode.EpisodeNumber).Distinct()]);
+        var countOffset = SyoboiScheduleMapper.FindCountOffset(lookup.Programs.Where(entry => entry.TID == titleId), episodeNumbersByAirDate);
+        if (countOffset is not 0)
+            _logger.LogDebug("Syoboi title {TitleID} counts {Offset} ahead of AniDB anime {AnimeID}; shifting its slots to match.", titleId, countOffset, anime.ID.ID);
 
         var timeZone = TimeZoneInfo.TryFindSystemTimeZoneById(SyoboiConstants.TimeZoneId, out var tz) ? tz : null;
         var isFinished = anime.EndDate.HasValue;
@@ -352,14 +357,14 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         var wroteAny = false;
         foreach (var bundle in bundles)
         {
-            if (!TryWriteSchedule(anime, bundle, timeZone, isFinished, episodesByNumber, episodesById, fromUtc, toUtc))
+            if (!TryWriteSchedule(anime, bundle, timeZone, isFinished, isSingleEpisode, countOffset, fromUtc, toUtc))
                 continue;
 
             wroteAny = true;
         }
 
         if (!wroteAny)
-            _logger.LogDebug("Wrote no schedule for AniDB anime {AnimeID} (Syoboi title {TitleID}): none of its {Count} channel(s) had a slot that mapped onto a known episode.", anime.ID.ID, titleId, bundles.Count);
+            _logger.LogDebug("Wrote no schedule for AniDB anime {AnimeID} (Syoboi title {TitleID}): none of its {Count} channel(s) had a slot with a place on the line.", anime.ID.ID, titleId, bundles.Count);
 
         return wroteAny;
     }
@@ -398,8 +403,8 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
     /// <param name="bundle">The channel's surviving slots.</param>
     /// <param name="timeZone">The schedule's display time zone.</param>
     /// <param name="isFinished">Whether the anime's run has ended.</param>
-    /// <param name="episodesByNumber">The anime's normal-episode IDs, keyed by episode number.</param>
-    /// <param name="episodesById">The anime's episodes, keyed by AniDB episode ID.</param>
+    /// <param name="isSingleEpisode">Whether the anime is a single episode, so an unnumbered slot is its first place.</param>
+    /// <param name="countOffset">How far Syoboi's count runs ahead of AniDB's numbering.</param>
     /// <param name="fromUtc">The start of the window the lookup asked about, in UTC.</param>
     /// <param name="toUtc">The end of the window the lookup asked about, in UTC.</param>
     /// <returns><c>true</c> if the schedule was written.</returns>
@@ -408,17 +413,17 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         SyoboiChannelBundle bundle,
         TimeZoneInfo? timeZone,
         bool isFinished,
-        IReadOnlyDictionary<int, int> episodesByNumber,
-        IReadOnlyDictionary<int, IAnidbEpisode> episodesById,
+        bool isSingleEpisode,
+        int countOffset,
         DateTime fromUtc,
         DateTime toUtc)
     {
-        var drafts = SyoboiScheduleMapper.BuildEpisodeDrafts(bundle.Programs, episodesByNumber);
+        var drafts = SyoboiScheduleMapper.BuildEpisodeDrafts(bundle.Programs, isSingleEpisode, countOffset);
         if (drafts.Count is 0)
         {
             _logger.LogDebug(
-                "No slot on Syoboi channel {ChannelID} ({ChannelName}) maps onto a known episode of AniDB anime {AnimeID}; its {Count} slot(s) are numbered {Numbers}.",
-                bundle.ChID, bundle.ChannelName, anime.ID.ID, bundle.Programs.Count, string.Join(", ", bundle.Programs.Select(DescribeEpisodes).Distinct())
+                "No slot on Syoboi channel {ChannelID} ({ChannelName}) has a place on the line of AniDB anime {AnimeID} at a count offset of {Offset}; its {Count} slot(s) are numbered {Numbers}.",
+                bundle.ChID, bundle.ChannelName, anime.ID.ID, countOffset, bundle.Programs.Count, string.Join(", ", bundle.Programs.Select(DescribeEpisodes).Distinct())
             );
             return false;
         }
@@ -453,10 +458,10 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
         var schedule = _airingScheduleService.AddOrUpdateSchedule(this, scheduleData);
 
         var airings = drafts
-            .Where(draft => episodesById.ContainsKey(draft.AnidbEpisodeID))
+            .Where(draft => schedule.LastEpisodeNumber is not { } last || schedule.FirstEpisodeNumber + draft.SequenceNumber - 1 <= last)
             .Select(draft => new EpisodeAiringData
             {
-                Episode = episodesById[draft.AnidbEpisodeID],
+                SequenceNumber = draft.SequenceNumber,
                 AiredAt = draft.AiredAtUtc,
                 OriginalAiredAt = draft.OriginalAiredAtUtc,
                 IsDelayed = draft.IsDelayed,
@@ -466,7 +471,7 @@ public sealed class SyoboiAiringScheduleProvider : IAiringScheduleProvider<Confi
             .ToList();
         if (airings.Count is 0)
         {
-            _logger.LogDebug("Dropped every airing for AniDB anime {AnimeID} on Syoboi channel {ChannelID}: the episodes they map onto are no longer part of the anime.", anime.ID.ID, bundle.ChID);
+            _logger.LogDebug("Dropped every airing for AniDB anime {AnimeID} on Syoboi channel {ChannelID}: every place is past the schedule's last episode.", anime.ID.ID, bundle.ChID);
             return false;
         }
 

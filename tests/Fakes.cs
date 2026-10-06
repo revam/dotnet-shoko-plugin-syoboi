@@ -93,7 +93,7 @@ internal static class Host
 
     /// <summary>
     /// An AniDB anime carrying a Syoboi title ID as a cross-reference
-    /// resource, and no episodes for an airing to be pinned to.
+    /// resource, and no episodes listed yet.
     /// </summary>
     /// <param name="animeId">The AniDB anime ID.</param>
     /// <param name="syoboiTitleId">The Syoboi title ID to carry, if any.</param>
@@ -104,6 +104,7 @@ internal static class Host
             ("Resources", _ => syoboiTitleId is { } titleId
                 ? new[] { new Resource { Type = ResourceType.CrossReference, Name = "Syoboi Calendar", Url = $"https://cal.syoboi.jp/tid/{titleId}/time" } }
                 : Array.Empty<Resource>()),
+            ("Type", _ => AnimeType.TV),
             ("AirDate", _ => null),
             ("EndDate", _ => null),
             ("Episodes", _ => Array.Empty<IAnidbEpisode>())

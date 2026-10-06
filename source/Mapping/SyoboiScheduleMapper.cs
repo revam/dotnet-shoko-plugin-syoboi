@@ -30,12 +30,15 @@ public sealed record SyoboiChannelBundle(
 );
 
 /// <summary>
-/// One program entry mapped onto an AniDB episode, ready to become an
-/// episode airing.
+/// One program entry placed on the schedule's numbered line, ready to become
+/// an episode airing.
 /// </summary>
 /// <param name="PID">The Syoboi program ID the airing came from.</param>
-/// <param name="EpisodeNumber">The AniDB episode number (Syoboi's <c>Count</c>).</param>
-/// <param name="AnidbEpisodeID">The AniDB episode ID it was matched to.</param>
+/// <param name="EpisodeNumber">Syoboi's own episode number (its <c>Count</c>).</param>
+/// <param name="SequenceNumber">
+/// The airing's place on the line: <paramref name="EpisodeNumber"/> less the
+/// title's count offset, so the AniDB episode number it stands for.
+/// </param>
 /// <param name="AiredAtUtc">The airing's start time in UTC, or <c>null</c> if it couldn't be parsed.</param>
 /// <param name="OriginalAiredAtUtc">
 /// The slot the run normally occupies, in UTC, when this one was pushed back
@@ -48,7 +51,7 @@ public sealed record SyoboiChannelBundle(
 public sealed record SyoboiEpisodeAiringDraft(
     string PID,
     int EpisodeNumber,
-    int AnidbEpisodeID,
+    int SequenceNumber,
     DateTime? AiredAtUtc,
     DateTime? OriginalAiredAtUtc = null,
     bool IsDelayed = false,
@@ -128,36 +131,34 @@ public static class SyoboiScheduleMapper
     }
 
     /// <summary>
-    /// Maps a channel bundle's program entries onto AniDB episode IDs,
-    /// dropping entries whose episode number has no matching normal episode.
-    /// A slot covering an episode range becomes one draft per episode, all
-    /// at the slot's time.
+    /// Places a channel bundle's program entries on the schedule's numbered
+    /// line, whether or not AniDB lists those episodes yet. A slot covering an
+    /// episode range becomes one draft per episode, all at the slot's time.
     /// </summary>
     /// <param name="programs">The program entries to map.</param>
-    /// <param name="anidbEpisodeIdsByNumber">
-    /// The anime's normal-episode AniDB episode IDs, keyed by episode number.
-    /// When it holds exactly one episode, slots with no episode number of
-    /// their own are mapped onto it.
+    /// <param name="isSingleEpisode">
+    /// Whether the anime is a single episode, such as a film, so a slot with no
+    /// episode number of its own is sequence <c>1</c>.
     /// </param>
-    /// <returns>One draft per episode of each program entry that maps to a known episode.</returns>
+    /// <param name="countOffset">
+    /// How far Syoboi's count runs ahead of AniDB's numbering; see
+    /// <see cref="FindCountOffset"/>.
+    /// </param>
+    /// <returns>One draft per episode of each program entry with a place of <c>1</c> or more.</returns>
     public static IReadOnlyList<SyoboiEpisodeAiringDraft> BuildEpisodeDrafts(
         IReadOnlyList<SyoboiProgramEntry> programs,
-        IReadOnlyDictionary<int, int> anidbEpisodeIdsByNumber)
+        bool isSingleEpisode = false,
+        int countOffset = 0)
     {
-        // A film or a one-off special has a single broadcast and no episode
-        // number to go with it; when the anime it maps onto has exactly one
-        // episode, that episode is the only thing the slot can be.
-        var soleEpisodeNumber = anidbEpisodeIdsByNumber.Count is 1 ? anidbEpisodeIdsByNumber.Keys.First() : (int?)null;
-
         var drafts = new List<SyoboiEpisodeAiringDraft>();
         foreach (var entry in programs)
         {
-            foreach (var episodeNumber in GetEpisodeNumbers(entry, soleEpisodeNumber))
+            foreach (var (episodeNumber, sequenceNumber) in GetPlaces(entry, isSingleEpisode, countOffset))
             {
-                if (!anidbEpisodeIdsByNumber.TryGetValue(episodeNumber, out var episodeId))
+                if (sequenceNumber < 1)
                     continue;
 
-                drafts.Add(new SyoboiEpisodeAiringDraft(entry.PID, episodeNumber, episodeId, entry.StartedAt, entry.OriginalStartedAt, entry.IsDelayed, entry.Kind));
+                drafts.Add(new SyoboiEpisodeAiringDraft(entry.PID, episodeNumber, sequenceNumber, entry.StartedAt, entry.OriginalStartedAt, entry.IsDelayed, entry.Kind));
             }
         }
 
@@ -165,13 +166,86 @@ public static class SyoboiScheduleMapper
     }
 
     /// <summary>
-    /// The episode numbers a program entry is for: its <c>Count</c>, else the
-    /// range in its subtitle, else the anime's sole episode.
+    /// Works out how far a title's <c>Count</c> runs ahead of AniDB's episode
+    /// numbers, for a title that keeps counting across cours AniDB splits
+    /// into separate anime. A regular slot of count <c>c</c> on the air date
+    /// of AniDB episode <c>n</c> votes for <c>c - n</c>, and the most votes
+    /// win, the offset nearest <c>0</c> on a tie.
+    /// </summary>
+    /// <param name="programs">The title's program entries, on any channel.</param>
+    /// <param name="episodeNumbersByAirDate">The anime's normal episode numbers, keyed by their air date.</param>
+    /// <returns>The offset to subtract from a count; <c>0</c> when no slot falls on a known air date.</returns>
+    public static int FindCountOffset(
+        IEnumerable<SyoboiProgramEntry> programs,
+        IReadOnlyDictionary<DateOnly, IReadOnlyList<int>> episodeNumbersByAirDate)
+    {
+        var votes = new Dictionary<int, int>();
+        foreach (var entry in programs)
+        {
+            if (entry.Deleted || entry.Kind is not EpisodeAiringKind.Normal || entry.Count is not > 0 || entry.StartedAt is not { } startedAt)
+                continue;
+
+            foreach (var date in GetAirDates(startedAt))
+            {
+                if (!episodeNumbersByAirDate.TryGetValue(date, out var episodeNumbers))
+                    continue;
+
+                foreach (var episodeNumber in episodeNumbers)
+                    votes[entry.Count.Value - episodeNumber] = votes.GetValueOrDefault(entry.Count.Value - episodeNumber) + 1;
+            }
+        }
+
+        return votes.Count is 0
+            ? 0
+            : votes
+                .OrderByDescending(vote => vote.Value)
+                .ThenBy(vote => Math.Abs(vote.Key))
+                .ThenBy(vote => vote.Key)
+                .First().Key;
+    }
+
+    /// <summary>
+    /// The days a slot may be listed under: its date in Japan, and the day
+    /// before for a late-night slot, which Japanese listings write as hour
+    /// 24 to 28 of the previous day.
+    /// </summary>
+    /// <param name="startedAt">The slot's start, in UTC.</param>
+    /// <returns>The dates.</returns>
+    private static IEnumerable<DateOnly> GetAirDates(DateTime startedAt)
+    {
+        var japanLocal = startedAt + SyoboiConstants.TimeZoneOffset;
+        var date = DateOnly.FromDateTime(japanLocal);
+        yield return date;
+
+        if (japanLocal.Hour < 5)
+            yield return date.AddDays(-1);
+    }
+
+    /// <summary>
+    /// The places a program entry takes on the line, with the Syoboi episode
+    /// number each one is keyed by.
     /// </summary>
     /// <param name="entry">The program entry.</param>
-    /// <param name="soleEpisodeNumber">The anime's only normal episode number, when it has exactly one.</param>
+    /// <param name="isSingleEpisode">Whether the anime is a single episode.</param>
+    /// <param name="countOffset">How far Syoboi's count runs ahead of AniDB's numbering.</param>
+    /// <returns>The episode and sequence numbers, in order; empty when the entry names none.</returns>
+    private static IEnumerable<(int EpisodeNumber, int SequenceNumber)> GetPlaces(SyoboiProgramEntry entry, bool isSingleEpisode, int countOffset)
+    {
+        // A film or a one-off special has a single broadcast and no episode
+        // number to go with it, so it can only be the first place.
+        if (entry.Count is null && entry.EpisodeRange is null)
+            return isSingleEpisode ? [(1, 1)] : [];
+
+        return GetEpisodeNumbers(entry).Select(episodeNumber => (episodeNumber, episodeNumber - countOffset));
+    }
+
+    /// <summary>
+    /// The episode numbers a program entry is for: its <c>Count</c>, else the
+    /// range in its subtitle.
+    /// </summary>
+    /// <param name="entry">The program entry.</param>
     /// <returns>The episode numbers, in order; empty when the entry names none.</returns>
-    private static IEnumerable<int> GetEpisodeNumbers(SyoboiProgramEntry entry, int? soleEpisodeNumber)
+    private static IEnumerable<int> GetEpisodeNumbers(SyoboiProgramEntry entry)
     {
         if (entry.Count is { } count)
             return [count];
@@ -179,6 +253,6 @@ public static class SyoboiScheduleMapper
         if (entry.EpisodeRange is (var first, var last))
             return Enumerable.Range(first, last - first + 1);
 
-        return soleEpisodeNumber is { } sole ? [sole] : [];
+        return [];
     }
 }

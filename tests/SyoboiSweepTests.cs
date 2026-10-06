@@ -179,8 +179,8 @@ public class SyoboiSweepTests
             Provider = new SyoboiAiringScheduleProvider(
                 Logger,
                 Host.ConfigurationProvider(new Configuration { ActiveOnly = false }),
-                // None of these anime has an episode for an airing to be
-                // pinned to, so the sweep never reaches a write.
+                // The stubbed site lists no slots, so the sweep never
+                // reaches a write.
                 airingScheduleService: null!,
                 Host.MetadataService(anime),
                 apiClient

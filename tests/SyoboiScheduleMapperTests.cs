@@ -133,16 +133,15 @@ public class SyoboiScheduleMapperTests
     }
 
     [Fact]
-    public void BuildEpisodeDrafts_maps_entries_onto_known_episode_numbers()
+    public void BuildEpisodeDrafts_places_entries_by_their_count()
     {
         var programs = new[] { Program("543959", chId: 19, count: 1), Program("543960", chId: 19, count: 2) };
-        var episodeIds = new Dictionary<int, int> { [1] = 555, [2] = 556 };
 
-        var drafts = SyoboiScheduleMapper.BuildEpisodeDrafts(programs, episodeIds);
+        var drafts = SyoboiScheduleMapper.BuildEpisodeDrafts(programs);
 
         Assert.Equal(2, drafts.Count);
         var first = drafts.Single(draft => draft.PID == "543959");
-        Assert.Equal(555, first.AnidbEpisodeID);
+        Assert.Equal(1, first.SequenceNumber);
         Assert.Equal("543959:1", first.Key);
         Assert.Equal(_startedAt, first.AiredAtUtc);
     }
@@ -152,7 +151,7 @@ public class SyoboiScheduleMapperTests
     {
         var programs = new[] { Program("538991", chId: 19, count: 1, stOffset: 600) };
 
-        var draft = Assert.Single(SyoboiScheduleMapper.BuildEpisodeDrafts(programs, new Dictionary<int, int> { [1] = 555 }));
+        var draft = Assert.Single(SyoboiScheduleMapper.BuildEpisodeDrafts(programs));
 
         Assert.Equal(_startedAt, draft.AiredAtUtc);
         Assert.Equal(_startedAt.AddSeconds(-600), draft.OriginalAiredAtUtc);
@@ -168,22 +167,22 @@ public class SyoboiScheduleMapperTests
     {
         var programs = new[] { Program("538991", chId: 19, count: 1, flag: flag) with { Comment = comment } };
 
-        var draft = Assert.Single(SyoboiScheduleMapper.BuildEpisodeDrafts(programs, new Dictionary<int, int> { [1] = 555 }));
+        var draft = Assert.Single(SyoboiScheduleMapper.BuildEpisodeDrafts(programs));
 
         Assert.Equal(kind, draft.Kind);
         Assert.Equal("538991:1", draft.Key);
     }
 
     [Fact]
-    public void BuildEpisodeDrafts_pins_an_unnumbered_slot_onto_a_single_episode_anime()
+    public void BuildEpisodeDrafts_places_an_unnumbered_slot_first_on_a_single_episode_anime()
     {
         // A film or special: one broadcast, no <Count>, one episode to be.
         var programs = new[] { Program("354919", chId: 19, count: null) };
 
-        var draft = Assert.Single(SyoboiScheduleMapper.BuildEpisodeDrafts(programs, new Dictionary<int, int> { [1] = 555 }));
+        var draft = Assert.Single(SyoboiScheduleMapper.BuildEpisodeDrafts(programs, isSingleEpisode: true));
 
-        Assert.Equal(1, draft.EpisodeNumber);
-        Assert.Equal(555, draft.AnidbEpisodeID);
+        Assert.Equal(1, draft.SequenceNumber);
+        Assert.Equal("354919:1", draft.Key);
     }
 
     [Fact]
@@ -191,7 +190,7 @@ public class SyoboiScheduleMapperTests
     {
         var programs = new[] { Program("354919", chId: 19, count: null) };
 
-        Assert.Empty(SyoboiScheduleMapper.BuildEpisodeDrafts(programs, new Dictionary<int, int> { [1] = 555, [2] = 556 }));
+        Assert.Empty(SyoboiScheduleMapper.BuildEpisodeDrafts(programs));
     }
 
     [Fact]
@@ -204,10 +203,58 @@ public class SyoboiScheduleMapperTests
     }
 
     [Fact]
-    public void BuildEpisodeDrafts_skips_entries_with_no_matching_episode_number()
+    public void BuildEpisodeDrafts_keeps_a_count_the_anime_does_not_list_yet()
     {
         var programs = new[] { Program("543959", chId: 19, count: 99) };
 
-        Assert.Empty(SyoboiScheduleMapper.BuildEpisodeDrafts(programs, new Dictionary<int, int> { [1] = 555 }));
+        Assert.Equal(99, Assert.Single(SyoboiScheduleMapper.BuildEpisodeDrafts(programs)).SequenceNumber);
     }
+
+    [Fact]
+    public void BuildEpisodeDrafts_subtracts_the_count_offset_and_drops_what_falls_before_the_line()
+    {
+        var programs = new[] { Program("543959", chId: 19, count: 12), Program("543960", chId: 19, count: 13) };
+
+        var draft = Assert.Single(SyoboiScheduleMapper.BuildEpisodeDrafts(programs, countOffset: 12));
+
+        Assert.Equal(1, draft.SequenceNumber);
+        Assert.Equal("543960:13", draft.Key);
+    }
+
+    #region Count offset
+
+    // 2021-03-29 17:10 UTC is 02:10 on the 30th in Japan, listed under the 29th.
+    private static SyoboiProgramEntry WeekProgram(string pid, int count, int week, int chId = 19)
+        => Program(pid, chId, count: count) with { StartedAt = _startedAt.AddDays(7 * week) };
+
+    private static Dictionary<DateOnly, IReadOnlyList<int>> AirDates(DateOnly first, int count)
+        => Enumerable.Range(1, count).ToDictionary(number => first.AddDays(7 * (number - 1)), IReadOnlyList<int> (number) => [number]);
+
+    [Fact]
+    public void FindCountOffset_learns_a_count_that_continues_from_an_earlier_cour()
+    {
+        var programs = new[] { WeekProgram("1", 13, 0), WeekProgram("2", 14, 1) };
+
+        Assert.Equal(12, SyoboiScheduleMapper.FindCountOffset(programs, AirDates(new(2021, 3, 30), 2)));
+        Assert.Equal(12, SyoboiScheduleMapper.FindCountOffset(programs, AirDates(new(2021, 3, 29), 2)));
+    }
+
+    [Fact]
+    public void FindCountOffset_keeps_the_count_when_no_slot_falls_on_an_air_date()
+    {
+        var programs = new[] { WeekProgram("1", 13, 0) };
+
+        Assert.Equal(0, SyoboiScheduleMapper.FindCountOffset(programs, AirDates(new(2022, 1, 1), 2)));
+    }
+
+    [Fact]
+    public void FindCountOffset_is_not_swayed_by_a_channel_a_week_behind()
+    {
+        // The second channel airs every episode a week later, on the next one's date.
+        var programs = new[] { WeekProgram("1", 1, 0), WeekProgram("2", 2, 1), WeekProgram("3", 1, 1, chId: 128), WeekProgram("4", 2, 2, chId: 128) };
+
+        Assert.Equal(0, SyoboiScheduleMapper.FindCountOffset(programs, AirDates(new(2021, 3, 30), 3)));
+    }
+
+    #endregion
 }
