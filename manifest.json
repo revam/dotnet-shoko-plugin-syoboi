@@ -16,6 +16,22 @@
   ],
   "releases": [
     {
+      "version": "1.2.0",
+      "tag": "v1.2.0",
+      "released_at": "2026-10-06T21:27:55.3318402Z",
+      "channel": "Stable",
+      "release_notes": "Airings are now stored by their place in the schedule, so episodes AniDB doesn\u0027t list yet are kept and link up once AniDB adds them. Titles whose episode count keeps running across cours are numbered from the start of the anime they belong to, learned from slots on AniDB\u0027s air dates. Channels are registered in Japan instead of with a suffix in their name.\n\nRebuilt against the abstractions \u00606.0.0-alpha.99\u0060 release.\n\nRequires Shoko Server with abstractions \u00606.0.0-alpha.99\u0060.",
+      "dependencies": [],
+      "archives": [
+        {
+          "runtime": "any",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/revam/dotnet-shoko-plugin-syoboi/releases/download/v1.2.0/SyoboiCalendar-v1.2.0-any.zip",
+          "checksum": "sha256:f99ba967666cd3dfb298fa94eff081812b7ca44d22e7c609e1aa8a0b07b97960"
+        }
+      ]
+    },
+    {
       "version": "1.1.2",
       "tag": "v1.1.2",
       "released_at": "2026-10-03T16:54:36.4667468Z",
