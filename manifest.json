@@ -16,6 +16,22 @@
   ],
   "releases": [
     {
+      "version": "1.2.2",
+      "tag": "v1.2.2",
+      "released_at": "2026-10-08T23:04:12.6790915Z",
+      "channel": "Stable",
+      "release_notes": "The User-Agent is built the same way as in the other plugins: the plugin\u0027s name and version, plus its repository URL from the plugin\u0027s own info. The two User-Agent settings are gone; old values in the configuration file are ignored.\n\nRequires Shoko Server with abstractions \u00606.0.0-alpha.100\u0060 or later.",
+      "dependencies": [],
+      "archives": [
+        {
+          "runtime": "any",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/revam/dotnet-shoko-plugin-syoboi/releases/download/v1.2.2/SyoboiCalendar-v1.2.2-any.zip",
+          "checksum": "sha256:2af92b855a10c0c1b28583df1e553fb70525ae1901513f2d04aaa17075e4f51c"
+        }
+      ]
+    },
+    {
       "version": "1.2.1",
       "tag": "v1.2.1",
       "released_at": "2026-10-08T02:22:12.3348056Z",
