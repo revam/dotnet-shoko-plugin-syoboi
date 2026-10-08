@@ -18,7 +18,7 @@ This plugin builds against a prerelease of `Shoko.Abstractions` 6.0, the first t
 - **Advance airings** — A slot whose comment marks it as an advance airing (先行放送, 先行配信, 先に…) is written as an `Advance` airing, kept out of the cadence like a rerun. A slot flagged 再 is a rerun whatever its comment says. Every airing is keyed by its own slot (`{PID}:{episode}`), so an advance airing or a rerun never collides with the episode's regular showing on the same channel.
 - **Observable skips** — Every reason a refresh writes nothing — no Syoboi ID, no slots in the window, every slot retracted, unnumbered or on a channel outside the allowed groups — is logged at Debug with the anime and title it applies to, so a legitimately empty result is never mistaken for a broken provider.
 - **Delays** — Syoboi records a pushed-back slot both in `StOffset` (seconds) and in `StTime` itself, so the delayed time is submitted as the airing's `AiredAt`, the run's usual slot as its `OriginalAiredAt`, and the airing is marked delayed.
-- **Rate limiting** — Every request goes through a shared limiter enforcing cal.syoboi.jp's one-request-per-second policy, with a custom `AppName (+Url)` User-Agent so the site doesn't throttle it harder.
+- **Rate limiting** — Every request goes through a shared limiter enforcing cal.syoboi.jp's one-request-per-second policy, with a custom `Shoko.Plugin.Syoboi/version (+url)` User-Agent so the site doesn't throttle it harder. The URL is the plugin's own repository, read from its registered plugin info, and is left off when a build has none.
 - **Core-driven sweeps** — The provider implements `ISweepingAiringScheduleProvider`, so the server decides when a sweep is due and how long one chunk may run, and the plugin only walks. A chunk asks about a hundred title IDs per request (`ProgLookup` takes a comma-separated `TID` list), stops as soon as its deadline fires, and hands back the AniDB anime ID it got to as the cursor the next chunk resumes after. The channel list is fetched once a day and shared across every chunk.
 - **Delta writes** — Every lookup covers a window rather than a whole run, so airings are written with `MergeAirings`: the slots Syoboi still lists are submitted, the ones it has dropped from that window are named as removals, and any airing outside the window is left alone.
 - **Configurable scope** — Optionally restrict the sweep to anime that are airing now, about to air, or recently ended, and/or to specific Syoboi channel groups, to stay a good citizen of a small community-run site.
@@ -71,8 +71,6 @@ The plugin exposes the following settings in the Shoko UI:
 | **Upcoming Window (Days)** | `30` | How many days before an anime's known air date it starts being swept. |
 | **Recently Ended Window (Days)** | `90` | How many days after an anime's end date it keeps being swept. |
 | **Allowed Channel Groups** | *(empty = all)* | Restrict tracking to specific Syoboi channel groups (`ChGroupName`), e.g. `テレビ 関東`, `BSデジタル`, `インターネット` or `AbemaTV`. Radio is always excluded regardless of this list. |
-| **User-Agent App Name** | `Shoko.Plugin.Syoboi` | Sent as the product token of the `AppName/version (+url)` User-Agent cal.syoboi.jp asks clients to identify themselves with. Anything that isn't valid in an HTTP token is stripped. |
-| **User-Agent Contact URL** | *(Shoko's repository)* | Sent as the comment part of the User-Agent. |
 
 How often the sweep runs is the server's setting rather than the plugin's: the provider suggests once a week, and the interval actually used lives on the provider's own page in the Shoko UI, where anything under fifteen minutes is clamped.
 
@@ -80,10 +78,9 @@ How often the sweep runs is the server's setting rather than the plugin's: the p
 
 | Piece | Responsibility |
 |---|---|
-| `Plugin` | `IPlugin` entry point; registers the shared services and the `HttpClient`. The provider itself is found by the server, not registered. |
+| `Plugin` | `IPlugin` entry point; registers the shared services and the `HttpClient`, with its User-Agent. The provider itself is found by the server, not registered. |
 | `Configuration` | Settings, as described above. |
 | `Http.SyoboiRateLimiter` | Enforces the one-request-per-second policy across every caller. |
-| `Http.SyoboiUserAgent` | Normalises the configured app name and contact URL into a well-formed `AppName/version (+url)` header. |
 | `Http.SyoboiApiClient` | Issues the `db.php` requests — `ProgLookup` per batch of titles, `ChLookup`/`ChGroupLookup` for the channel directory, `TitleLookup` on demand. |
 | `Http.SyoboiChannelDirectoryCache` | Keeps the site-wide channel directory between requests, so a sweep doesn't re-fetch it per title. |
 | `Http.SyoboiResponseParser` | Converts the XML wire format into typed records, honouring the `Result/Code` envelope (404 is "no data", anything else non-200 is a failure). |

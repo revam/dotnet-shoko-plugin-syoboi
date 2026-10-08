@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http.Headers;
 using System.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Shoko.Abstractions.Config;
@@ -50,19 +51,21 @@ public class Plugin : IPlugin, IPluginServiceRegistration
         serviceCollection.AddSingleton<SyoboiRateLimiter>();
         serviceCollection.AddSingleton<SyoboiChannelDirectoryCache>();
 
-        serviceCollection.AddHttpClient<SyoboiApiClient>((sp, client) =>
-        {
-            var configProvider = sp.GetRequiredService<ConfigurationProvider<Configuration>>();
-            var config = configProvider.Load();
-            client.BaseAddress = new Uri(SyoboiConstants.BaseUrl);
-            client.DefaultRequestHeaders.UserAgent.Clear();
+        serviceCollection
             // Syoboi asks for a custom User-Agent in the form "AppName (+url)";
             // clients without one are throttled harder (see SyoboiConstants).
-            // Both halves come from user-editable settings, so SyoboiUserAgent
-            // normalises them into something the header parser accepts.
-            foreach (var value in SyoboiUserAgent.Build(config.UserAgentAppName, config.UserAgentUrl))
-                client.DefaultRequestHeaders.UserAgent.Add(value);
-        })
+            // The contact URL is read from the plugin's registered info rather
+            // than written here, and left off when a local build has none.
+            .AddHttpClient<SyoboiApiClient>((provider, client) =>
+            {
+                var info = provider.GetRequiredService<IPluginManager>().GetPluginInfo<Plugin>();
+                client.BaseAddress = new Uri(SyoboiConstants.BaseUrl);
+                client.DefaultRequestHeaders.UserAgent.Add(
+                    new ProductInfoHeaderValue("Shoko.Plugin.Syoboi", info?.Version.Version.ToString(3) ?? typeof(Plugin).Assembly.GetName().Version?.ToString(3) ?? "1.0.0")
+                );
+                if (info?.RepositoryUrl is { Length: > 0 } repositoryUrl)
+                    client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue($"(+{repositoryUrl})"));
+            })
             // The provider holds on to its client for the life of the server,
             // so one handler is kept and its pooled connections recycled.
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan)

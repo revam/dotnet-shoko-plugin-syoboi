@@ -53,20 +53,4 @@ public class Configuration : IAiringScheduleProviderConfiguration, INewtonsoftJs
     /// </summary>
     [Display(Name = "Allowed Channel Groups")]
     public List<string> AllowedChannelGroups { get; set; } = [];
-
-    /// <summary>
-    /// The application name sent as the product token of the User-Agent
-    /// header, as <c>"AppName (+Url)"</c>. Syoboi throttles clients that omit
-    /// a custom User-Agent much harder than the normal 1 request/second.
-    /// </summary>
-    [Display(Name = "User-Agent App Name")]
-    [DefaultValue("Shoko.Plugin.Syoboi")]
-    public string UserAgentAppName { get; set; } = "Shoko.Plugin.Syoboi";
-
-    /// <summary>
-    /// The contact URL sent as the comment part of the User-Agent header.
-    /// </summary>
-    [Display(Name = "User-Agent Contact URL")]
-    [DefaultValue("https://github.com/ShokoAnime/ShokoServer")]
-    public string UserAgentUrl { get; set; } = "https://github.com/ShokoAnime/ShokoServer";
 }
