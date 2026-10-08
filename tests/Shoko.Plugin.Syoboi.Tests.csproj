@@ -24,7 +24,7 @@
     keeps them.
   -->
   <ItemGroup>
-    <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.99" />
+    <PackageReference Include="Shoko.Abstractions" Version="6.0.0-alpha.100" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 
