@@ -16,6 +16,22 @@
   ],
   "releases": [
     {
+      "version": "1.2.1",
+      "tag": "v1.2.1",
+      "released_at": "2026-10-08T02:22:12.3348056Z",
+      "channel": "Stable",
+      "release_notes": "Rebuilt against the abstractions \u00606.0.0-alpha.100\u0060 release, where the interfaces that tie a configuration to its provider moved into \u0060Shoko.Abstractions.Config\u0060. Schedules from Syoboi Calendar are fetched and written as before.\n\nRequires Shoko Server with abstractions \u00606.0.0-alpha.100\u0060.",
+      "dependencies": [],
+      "archives": [
+        {
+          "runtime": "any",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/revam/dotnet-shoko-plugin-syoboi/releases/download/v1.2.1/SyoboiCalendar-v1.2.1-any.zip",
+          "checksum": "sha256:e7ec7856dc3d01d9786d2b23df89e83b05cd066891aedd121dcb2635b7f744b7"
+        }
+      ]
+    },
+    {
       "version": "1.2.0",
       "tag": "v1.2.0",
       "released_at": "2026-10-06T21:27:55.3318402Z",
