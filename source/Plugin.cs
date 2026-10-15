@@ -12,7 +12,7 @@ namespace Shoko.Plugin.Syoboi;
 /// Plugin providing airing schedules for Japanese TV and streaming broadcasts,
 /// sourced from cal.syoboi.jp (Syoboi Calendar).
 /// </summary>
-public class Plugin : IPlugin, IPluginServiceRegistration
+public class Plugin : IPlugin<Configuration>, IPluginServiceRegistration
 {
     /// <summary>
     /// The embedded resource of the plugin's thumbnail.

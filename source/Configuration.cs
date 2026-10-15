@@ -14,7 +14,7 @@ namespace Shoko.Plugin.Syoboi;
 /// and let an operator narrow which channel groups get tracked at all.
 /// </remarks>
 [Display(Name = "Syoboi Calendar")]
-public class Configuration : IAiringScheduleProviderConfiguration, INewtonsoftJsonConfiguration
+public class Configuration : IAiringScheduleProviderConfiguration, INewtonsoftJsonConfiguration, IPluginConfiguration
 {
     /// <summary>
     /// Only sweep AniDB anime that are currently airing, about to air, or
