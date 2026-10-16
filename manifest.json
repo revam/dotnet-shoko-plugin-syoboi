@@ -16,6 +16,22 @@
   ],
   "releases": [
     {
+      "version": "1.3.1",
+      "tag": "v1.3.1",
+      "released_at": "2026-10-16T07:18:29.0903248Z",
+      "channel": "Stable",
+      "release_notes": "Rebuilt against the abstractions \u00606.0.0-alpha.108\u0060 release.\n\nRequires Shoko Server with abstractions \u00606.0.0-alpha.108\u0060.",
+      "dependencies": [],
+      "archives": [
+        {
+          "runtime": "any",
+          "abstraction": "6.0.0",
+          "url": "https://github.com/revam/dotnet-shoko-plugin-syoboi/releases/download/v1.3.1/SyoboiCalendar-v1.3.1-any.zip",
+          "checksum": "sha256:84ff4fcbfc18f043d4c35e979f8324057dc558ca9d0ef15d4342369af2c95553"
+        }
+      ]
+    },
+    {
       "version": "1.3.0",
       "tag": "v1.3.0",
       "released_at": "2026-10-15T09:40:01.1053995Z",
